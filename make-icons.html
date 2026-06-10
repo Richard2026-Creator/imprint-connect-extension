@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Generate Extension Icons</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 40px; text-align: center; }
+    h1 { color: #ff6b6b; }
+    canvas { margin: 10px; background: #16213e; border-radius: 8px; vertical-align: middle; }
+    button { margin-top: 20px; padding: 12px 24px; font-size: 1rem; font-weight: 600; border: none; border-radius: 10px; background: linear-gradient(135deg, #e63946, #ff6b6b); color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    p { color: #888; max-width: 600px; margin: 12px auto; }
+    input[type=file] { margin: 16px 0; color: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <h1>Extension Icon Generator</h1>
+  <p>1. Click "Choose File" and select your logo image (the circular "I" PNG).<br>
+     2. Click "Generate &amp; Download Icons". Three PNGs will download.<br>
+     3. Move them into an <strong>icons</strong> folder inside your extension folder.</p>
+
+  <input type="file" id="file" accept="image/*">
+  <div>
+    <canvas id="c16" width="16" height="16"></canvas>
+    <canvas id="c48" width="48" height="48"></canvas>
+    <canvas id="c128" width="128" height="128"></canvas>
+  </div>
+  <br>
+  <button id="dl" disabled>Generate &amp; Download Icons</button>
+
+  <script>
+    const canvases = { 16: document.getElementById('c16'), 48: document.getElementById('c48'), 128: document.getElementById('c128') };
+    let img = null;
+
+    function render() {
+      if (!img) return;
+      Object.values(canvases).forEach((canvas) => {
+        const ctx = canvas.getContext('2d');
+        const s = canvas.width;
+        ctx.clearRect(0, 0, s, s);
+        const scale = Math.max(s / img.width, s / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, (s - w) / 2, (s - h) / 2, w, h);
+      });
+    }
+
+    document.getElementById('file').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        img = new Image();
+        img.onload = () => { render(); document.getElementById('dl').disabled = false; };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(f);
+    });
+
+    document.getElementById('dl').addEventListener('click', () => {
+      Object.entries(canvases).forEach(([size, canvas]) => {
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `icon${size}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    });
+  </script>
+</body>
+</html>

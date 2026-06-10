@@ -1,0 +1,13 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Build artifacts
+*.zip
+
+# Local Chrome profile (if testing with Puppeteer variants)
+.chrome-profile/

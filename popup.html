@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #F9F8F6;
+      --card: #FFFDFB;
+      --charcoal: #2B2926;
+      --charcoal-soft: #4A4742;
+      --muted: #908A80;
+      --muted-light: #B5AEA3;
+      --gold: #B08D4F;
+      --gold-soft: #C9B48A;
+      --line: #ECE7DF;
+      --line-soft: #F1ECE4;
+      --disabled-bg: #EDEAE4;
+      --disabled-text: #B2ABA0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 380px;
+      background: var(--bg);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--charcoal);
+      padding: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 26px 24px 22px;
+      box-shadow: 0 6px 24px rgba(43, 41, 38, 0.06), 0 1px 3px rgba(43, 41, 38, 0.04);
+    }
+
+    /* --- Header / logo lock-up --- */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .logo img {
+      height: 54px;
+      width: auto;
+      display: block;
+    }
+    .menu {
+      color: var(--muted-light);
+      font-size: 18px;
+      line-height: 1;
+      letter-spacing: 1px;
+      cursor: default;
+      user-select: none;
+    }
+
+    /* --- Subheading --- */
+    .subhead {
+      margin-top: 22px;
+      font-size: 9.5px;
+      font-weight: 500;
+      letter-spacing: 2.4px;
+      line-height: 1.7;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--line);
+      border: 0;
+      margin: 18px 0;
+    }
+    .divider-soft { background: var(--line-soft); }
+
+    /* --- Editorial heading --- */
+    .editorial {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+      font-size: 21px;
+      line-height: 1.5;
+      color: var(--charcoal);
+      margin: 4px 0 12px;
+    }
+    .helper {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* --- Buttons --- */
+    .btn {
+      font-family: 'Inter', sans-serif;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 999px;
+      transition: all 0.18s ease;
+      border: 1px solid transparent;
+    }
+    .btn-primary {
+      width: 100%;
+      margin-top: 22px;
+      padding: 14px;
+      background: var(--charcoal);
+      color: #F4F1EC;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2.2px;
+    }
+    .btn-primary:hover { background: #1d1b18; }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .btn-outline {
+      flex: 1;
+      padding: 12px;
+      background: transparent;
+      color: var(--charcoal-soft);
+      border: 1px solid var(--gold-soft);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 1.8px;
+    }
+    .btn-outline:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .btn-download {
+      width: 100%;
+      margin-top: 12px;
+      padding: 13px;
+      background: var(--disabled-bg);
+      color: var(--disabled-text);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2.2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-download:not(:disabled) {
+      background: var(--charcoal);
+      color: #F4F1EC;
+      cursor: pointer;
+    }
+    .btn-download:not(:disabled):hover { background: #1d1b18; }
+    .btn-download:disabled { cursor: not-allowed; }
+    .btn-download .lock { width: 11px; height: 11px; opacity: 0.8; }
+
+    /* --- Status row --- */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-icon {
+      width: 26px;
+      height: 26px;
+      min-width: 26px;
+      border-radius: 50%;
+      border: 1px solid var(--gold-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold);
+    }
+    .status-icon svg { width: 12px; height: 12px; }
+    .status-text .title {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: var(--charcoal);
+      text-transform: uppercase;
+    }
+    .status-text .count {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* --- Live status message (from JS) --- */
+    #status {
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 0;
+      line-height: 1.5;
+    }
+    #status.error { color: #A35A4A; }
+    #status:empty { display: none; }
+    #status:not(:empty) { margin-top: 14px; }
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid rgba(176,141,79,0.25);
+      border-radius: 50%;
+      border-top-color: var(--gold);
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* --- Pin grid: 2 large square columns --- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--gold-soft) transparent;
+    }
+    .grid::-webkit-scrollbar { width: 6px; }
+    .grid::-webkit-scrollbar-track { background: transparent; }
+    .grid::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+    .grid:hover::-webkit-scrollbar-thumb { background: var(--gold-soft); }
+    #grid:not(:empty) { margin-top: 16px; }
+    .pin {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .pin:hover { border-color: var(--gold-soft); }
+    .pin.selected { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+    .pin img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .pin .chk {
+      position: absolute; top: 8px; left: 8px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid var(--gold-soft);
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .pin.selected .chk { background: var(--gold); border-color: var(--gold); }
+    .pin.selected .chk::after {
+      content: ''; position: absolute; left: 6px; top: 3.5px;
+      width: 5px; height: 9px;
+      border-right: 2px solid #fff; border-bottom: 2px solid #fff;
+      transform: rotate(45deg);
+    }
+
+    /* --- Footer --- */
+    .footer {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted-light);
+      font-size: 8.5px;
+      font-weight: 500;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+    }
+    .footer svg { width: 10px; height: 10px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <img src="IMPRINT Connect Logo.png" alt="IMPRINT Connect">
+      </div>
+      <div class="menu">&#8943;</div>
+    </div>
+
+    <!-- Subheading -->
+    <div class="subhead">
+      Curate Pinterest Inspiration<br>
+      For Your Imprint Library
+    </div>
+
+    <hr class="divider divider-soft">
+
+    <!-- Editorial heading -->
+    <div class="editorial">
+      Open a Pinterest board,<br>
+      then click &ldquo;Scan board&rdquo;.
+    </div>
+    <div class="helper">
+      Keep this window open while we scan and collect your images.
+    </div>
+
+    <!-- Primary action -->
+    <button class="btn btn-primary" id="scanBtn">Scan Board</button>
+
+    <!-- Secondary actions -->
+    <div class="row">
+      <button class="btn btn-outline" id="allBtn">Select All</button>
+      <button class="btn btn-outline" id="noneBtn">Deselect All</button>
+    </div>
+
+    <!-- Download -->
+    <button class="btn btn-download" id="dlBtn" disabled>
+      <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+        <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+      </svg>
+      Download ZIP
+    </button>
+
+    <hr class="divider">
+
+    <!-- Status -->
+    <div class="status-row">
+      <div class="status-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12l5 5L20 6"></path>
+        </svg>
+      </div>
+      <div class="status-text">
+        <div class="title">Board Ready</div>
+        <div class="count" id="count">0 images selected</div>
+      </div>
+    </div>
+
+    <!-- Live status message from JS -->
+    <div id="status"></div>
+
+    <!-- Pin grid -->
+    <div class="grid" id="grid"></div>
+
+    <hr class="divider">
+
+    <!-- Footer -->
+    <div class="footer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+        <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+      </svg>
+      Keep This Window Open While Scanning
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
