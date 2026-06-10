@@ -1,14 +1,14 @@
-# Privacy Policy — Pinterest Board Downloader
+# Privacy Policy — IMPRINT Connect
 
 _Last updated: June 2026_
 
 ## Summary
 
-Pinterest Board Downloader does not collect, store, transmit, or sell any personal data. Everything the extension does happens locally in your own browser.
+IMPRINT Connect does not collect, store, transmit, or sell any personal data. Everything the extension does happens locally in your own browser.
 
 ## What the extension does
 
-- When you click "Scan board", the extension reads the image URLs of the pins on the Pinterest board page you are currently viewing, by scrolling the page in your browser.
+- When you click "Scan Board", the extension reads the image URLs of the pins on the Pinterest board page you are currently viewing, by scrolling the page in your browser.
 - When you click "Download ZIP", the extension downloads the images you selected directly from Pinterest's image servers (i.pinimg.com) to your own computer, and packages them into a ZIP file.
 
 ## What the extension does NOT do
@@ -21,7 +21,7 @@ Pinterest Board Downloader does not collect, store, transmit, or sell any person
 
 ## Permissions and why they are needed
 
-- **activeTab / scripting**: to read the pin image URLs from the Pinterest board tab you are actively viewing when you click "Scan board".
+- **activeTab / scripting**: to read the pin image URLs from the Pinterest board tab you are actively viewing when you click "Scan Board".
 - **downloads**: to save the generated ZIP file to your computer.
 - **host access to pinterest.com and i.pinimg.com**: to read the board page and to fetch the pin images for the ZIP.
 

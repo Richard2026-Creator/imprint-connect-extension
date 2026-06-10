@@ -1,4 +1,4 @@
-# IMPRINT Connect — Pinterest Board Downloader
+# IMPRINT Connect
 
 A Chrome extension that lets IMPRINT users curate and download images from any Pinterest board they are viewing, packaged as a single ZIP file.
 
@@ -43,7 +43,7 @@ It runs entirely in your browser using your existing Pinterest session — no se
 
 ## Privacy
 
-This extension collects no personal data and transmits nothing to any server. See [PRIVACY.md](PRIVACY.md).
+IMPRINT Connect collects no personal data and transmits nothing to any server. See [PRIVACY.md](PRIVACY.md).
 
 ## Disclaimer
 
