@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Pinterest Board Downloader",
+  "name": "IMPRINT Connect",
   "version": "1.0",
-  "description": "Scan the Pinterest board you are viewing, pick the pins you want, and download them as a ZIP.",
+  "description": "Curate Pinterest inspiration for your IMPRINT library. Scan a board, select the images you want, and download them as a ZIP.",
   "permissions": ["scripting", "activeTab", "downloads"],
   "host_permissions": [
     "https://*.pinterest.com/*",
@@ -10,7 +10,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Pinterest Board Downloader",
+    "default_title": "IMPRINT Connect",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
