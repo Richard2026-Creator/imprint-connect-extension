@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>IMPRINT Connect — Screenshot Builder</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #2B2926; color: #F9F8F6; padding: 36px; text-align: center; }
+    h1 { font-weight: 600; margin-bottom: 8px; }
+    p { color: #B5AEA3; max-width: 640px; margin: 8px auto; line-height: 1.5; }
+    input[type=file] { margin: 18px 0; color: #F9F8F6; }
+    canvas { margin: 18px auto; display: block; max-width: 100%; height: auto; border: 1px solid #4A4742; border-radius: 8px; }
+    button { padding: 12px 26px; font-size: 1rem; font-weight: 600; border: none; border-radius: 10px; background: #B08D4F; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>IMPRINT Connect — Screenshot Builder</h1>
+  <p>1. Click "Choose File" and select your popup screenshot (any size).<br>
+     2. It will be centred on a 1280×800 branded background.<br>
+     3. Click "Download 1280×800 Screenshot" and upload that file to the Chrome Web Store.</p>
+
+  <input type="file" id="file" accept="image/*">
+  <canvas id="canvas" width="1280" height="800"></canvas>
+  <br>
+  <button id="dl" disabled>Download 1280&times;800 Screenshot</button>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const W = 1280, H = 800;
+    let img = null;
+
+    function drawBackground() {
+      // Warm off-white gradient background
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, '#F9F8F6');
+      grad.addColorStop(1, '#EFEAE1');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Subtle gold rule near top
+      ctx.fillStyle = '#C9B48A';
+      ctx.fillRect(W/2 - 30, 92, 60, 1);
+
+      // Brand wordmark
+      ctx.fillStyle = '#2B2926';
+      ctx.textAlign = 'center';
+      ctx.font = '600 30px Georgia, serif';
+      ctx.fillText('I M P R I N T', W/2, 70);
+      ctx.fillStyle = '#908A80';
+      ctx.font = '500 13px -apple-system, Segoe UI, sans-serif';
+      ctx.fillText('C O N N E C T', W/2, 115);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+      drawBackground();
+      if (!img) return;
+      // Fit the popup screenshot within a padded area, preserving aspect
+      const maxH = 600, maxW = 900;
+      let scale = Math.min(maxW / img.width, maxH / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = (W - w) / 2;
+      const y = 150 + (H - 150 - h) / 2;
+      // Soft shadow
+      ctx.save();
+      ctx.shadowColor = 'rgba(43,41,38,0.18)';
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetY = 10;
+      // Rounded clip
+      const r = 16;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(img, x, y, w, h);
+      ctx.restore();
+    }
+
+    drawBackground();
+
+    document.getElementById('file').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        img = new Image();
+        img.onload = () => { render(); document.getElementById('dl').disabled = false; };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(f);
+    });
+
+    document.getElementById('dl').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = 'imprint-connect-screenshot.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  </script>
+</body>
+</html>

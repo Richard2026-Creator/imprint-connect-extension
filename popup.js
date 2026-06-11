@@ -41,13 +41,40 @@ function renderGrid() {
 // --- This function is injected into the Pinterest tab and runs there ---
 // It scrolls the board and accumulates pin image URLs (Pinterest recycles
 // off-screen pins, so we must collect continuously while scrolling).
+//
+// Pinterest appends a "More ideas" / "More like this" section of SUGGESTED
+// pins below the actual board. We only want pins saved to the board, so we
+// find the position of that section and ignore anything at or below it, and
+// stop scrolling once we reach it.
 async function scrollAndCollect(maxPins) {
   const collected = new Map();
 
-  function harvest() {
+  // Find the vertical document position where the suggestions section begins.
+  // Returns Infinity if no boundary is found yet (still within the board).
+  function getBoundaryY() {
+    const headingMatch = /^(more ideas|more like this|more to explore|ideas you might love|inspired by|related ideas)/i;
+    // 1) Explicit Pinterest test ids for the related/more section
+    let marker = document.querySelector('[data-test-id="board-feed-related-pins"], [data-test-id="moreIdeas"], [data-test-id="more-ideas-header"]');
+    if (marker) return marker.getBoundingClientRect().top + window.scrollY;
+    // 2) Any heading element whose text starts with a known suggestions label
+    const headings = document.querySelectorAll('h1, h2, h3, h4, [role="heading"]');
+    for (const h of headings) {
+      const t = (h.textContent || '').trim();
+      if (headingMatch.test(t)) {
+        return h.getBoundingClientRect().top + window.scrollY;
+      }
+    }
+    return Infinity;
+  }
+
+  function harvest(boundaryY) {
     let nodes = Array.from(document.querySelectorAll('[data-test-id="pin"], [data-test-id="pinWrapper"]'));
     if (nodes.length === 0) nodes = Array.from(document.querySelectorAll('a[href*="/pin/"]'));
     nodes.forEach((node) => {
+      // Skip pins that sit at or below the suggestions boundary
+      const top = node.getBoundingClientRect().top + window.scrollY;
+      if (top >= boundaryY) return;
+
       const img = node.querySelector('img');
       if (!img) return;
       let src = img.src || img.getAttribute('data-src') || '';
@@ -66,14 +93,23 @@ async function scrollAndCollect(maxPins) {
     });
   }
 
-  harvest();
+  harvest(getBoundaryY());
   let stable = 0;
   for (let i = 0; i < 500; i++) {
     const before = collected.size;
     if (before >= maxPins) break;
+
+    // If the suggestions section is already loaded and we've scrolled to it,
+    // stop — everything below is Pinterest's recommendations, not the board.
+    const boundaryY = getBoundaryY();
+    if (boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY) {
+      break;
+    }
+
     window.scrollBy(0, window.innerHeight * 1.5);
     await new Promise(r => setTimeout(r, 1200));
-    harvest();
+    harvest(getBoundaryY());
+
     if (collected.size === before) {
       stable++;
       if (stable >= 6) break; // reached the bottom
