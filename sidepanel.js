@@ -336,7 +336,8 @@ function renderItems() {
     card.innerHTML = `
       <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
       <div class="body">
-        <input class="caption" type="text" value="${captionVal}" placeholder="Add a name..." spellcheck="false">
+        <div class="caption-label">Name</div>
+        <input class="caption" type="text" value="${captionVal}" placeholder="Type a name..." spellcheck="false">
         <div class="tagselects">
           <select data-field="room">${optionsHtml(rooms, it.room, 'Room')}</select>
           <select data-field="category">${optionsHtml(CATEGORIES, it.category, 'Category')}</select>
