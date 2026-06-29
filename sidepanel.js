@@ -7,6 +7,14 @@
 const CATEGORIES = ['Lighting', 'Furniture', 'Textiles', 'Flooring', 'Wall & Paint', 'Decor', 'Window', 'Kitchen', 'Bath', 'Outdoor', 'Art', 'Other'];
 const STYLES = ['Modern', 'Contemporary', 'Mid-Century', 'Japandi', 'Scandinavian', 'Traditional', 'Transitional', 'Industrial', 'Coastal', 'Bohemian', 'Minimalist', 'Farmhouse', 'Art Deco', 'Other'];
 const STATUSES = ['Proposed', 'Approved', 'Ordered', 'Rejected'];
+const ROOMS = [
+  'Entrance Hall', 'Hallway', 'Living Room', 'Family Room', 'Study / Home Office', 'Dining Room',
+  'Kitchen', 'Open-Plan Kitchen / Dining / Living Area', 'Bedroom', 'Primary Bedroom / Main Bedroom',
+  'Guest Bedroom', 'Bathroom', 'Ensuite Bathroom', 'Guest WC', 'Cloakroom', 'Dressing Room',
+  'Laundry Room', 'Utility Room', 'Staircase', 'Landing', 'Conservatory / Sunroom',
+  'Attic / Loft Room', 'Basement', 'Storage Room', 'Other Room'
+];
+const ADD_NEW = '__add__';   // sentinel value for the "Add new…" option
 
 // The IMPRINT wordmark, recreated as crisp markup (used when no custom logo).
 const LOCKUP_HTML = '<div class="logo-lockup"><div class="imprint">IMPRINT<span class="tm">&#8482;</span></div><div class="rule"></div><div class="connect">Connect</div></div>';
@@ -17,6 +25,8 @@ let items = [];                 // items for the current project
 let scanResults = [];           // pins from the latest scan
 const scanSelected = new Set(); // indices selected in the scan panel
 let brandLogo = '';             // user's custom logo as a data URL (optional)
+let customCategories = [];      // user-added categories (global)
+let customStyles = [];          // user-added styles (global)
 
 const el = (id) => document.getElementById(id);
 const ui = {
@@ -120,19 +130,15 @@ ui.modal.addEventListener('click', (e) => {
   if (e.target === ui.modal) closeModal(el('modalInput') ? null : false);
 });
 
-function optionsHtml(values, selected, blankLabel) {
-  const blank = `<option value="">${esc(blankLabel || '—')}</option>`;
-  const opts = values.map(v => `<option value="${esc(v)}"${v === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
-  return blank + opts;
-}
-
 // ---------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------
 async function init() {
-  const stored = await chrome.storage.local.get(['namingMode', 'brandLogo']);
+  const stored = await chrome.storage.local.get(['namingMode', 'brandLogo', 'customCategories', 'customStyles']);
   if (stored && stored.namingMode) ui.namingMode.value = stored.namingMode;
   brandLogo = (stored && stored.brandLogo) || '';
+  customCategories = (stored && stored.customCategories) || [];
+  customStyles = (stored && stored.customStyles) || [];
   applyBrand();
 
   let projects = await listProjects();
@@ -325,9 +331,55 @@ function roomList() {
   return Array.from(rooms).sort((a, b) => a.localeCompare(b));
 }
 
+// Full room choices for assigning: the standard list + any custom rooms
+// this project has accumulated.
+function roomOptionList() {
+  const list = ROOMS.slice();
+  const lower = list.map(r => r.toLowerCase());
+  const extra = new Set();
+  (currentProject.rooms || []).forEach(r => { if (r && !lower.includes(r.toLowerCase())) extra.add(r); });
+  items.forEach(it => { if (it.room && !lower.includes(it.room.toLowerCase())) extra.add(it.room); });
+  return list.concat(Array.from(extra).sort((a, b) => a.localeCompare(b)));
+}
+
+// Build the <option> list for an item's tag dropdown, including a blank
+// placeholder and (except for status) an "Add new…" option at the end.
+function fieldOptions(field, selected) {
+  let values;
+  if (field === 'room') values = roomOptionList();
+  else if (field === 'category') values = CATEGORIES.concat(customCategories);
+  else if (field === 'style') values = STYLES.concat(customStyles);
+  else values = STATUSES;
+  if (selected && !values.includes(selected)) values = values.concat(selected);
+
+  const blankLabel = field.charAt(0).toUpperCase() + field.slice(1);
+  let html = `<option value="">${esc(blankLabel)}</option>`;
+  html += values.map(v => `<option value="${esc(v)}"${v === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  if (field !== 'status') html += `<option value="${ADD_NEW}">+ Add ${field}…</option>`;
+  return html;
+}
+
+// Persist a newly typed value: rooms per-project, categories/styles globally.
+async function addCustomValue(field, val) {
+  if (field === 'room') {
+    await addRoom(currentProject.id, val);
+    currentProject = await getProject(currentProject.id);
+  } else if (field === 'category') {
+    if (!CATEGORIES.includes(val) && !customCategories.includes(val)) {
+      customCategories.push(val);
+      await chrome.storage.local.set({ customCategories });
+    }
+  } else if (field === 'style') {
+    if (!STYLES.includes(val) && !customStyles.includes(val)) {
+      customStyles.push(val);
+      await chrome.storage.local.set({ customStyles });
+    }
+  }
+}
+
 function populateFilters() {
   const rooms = roomList();
-  ui.roomOptions.innerHTML = rooms.map(r => `<option value="${esc(r)}">`).join('');
+  ui.roomOptions.innerHTML = roomOptionList().map(r => `<option value="${esc(r)}">`).join('');
 
   const keep = {
     room: ui.filterRoom.value, category: ui.filterCategory.value,
@@ -335,8 +387,8 @@ function populateFilters() {
   };
   ui.filterRoom.innerHTML = `<option value="">All rooms</option><option value="__none__">Unassigned</option>`
     + rooms.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
-  ui.filterCategory.innerHTML = `<option value="">All categories</option>` + CATEGORIES.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  ui.filterStyle.innerHTML = `<option value="">All styles</option>` + STYLES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  ui.filterCategory.innerHTML = `<option value="">All categories</option>` + CATEGORIES.concat(customCategories).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  ui.filterStyle.innerHTML = `<option value="">All styles</option>` + STYLES.concat(customStyles).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   ui.filterStatus.innerHTML = `<option value="">Any status</option>` + STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   ui.filterRoom.value = keep.room || '';
   ui.filterCategory.value = keep.category || '';
@@ -384,7 +436,6 @@ function renderItems() {
   }
 
   ui.items.innerHTML = '';
-  const rooms = roomList();
   list.forEach(it => {
     const card = document.createElement('div');
     card.className = 'item';
@@ -398,10 +449,10 @@ function renderItems() {
         <div class="caption-label">Name</div>
         <input class="caption" type="text" value="${captionVal}" placeholder="Type a name..." spellcheck="false">
         <div class="tagselects">
-          <select data-field="room">${optionsHtml(rooms, it.room, 'Room')}</select>
-          <select data-field="category">${optionsHtml(CATEGORIES, it.category, 'Category')}</select>
-          <select data-field="style">${optionsHtml(STYLES, it.style, 'Style')}</select>
-          <select data-field="status">${optionsHtml(STATUSES, it.status, 'Status')}</select>
+          <select data-field="room">${fieldOptions('room', it.room)}</select>
+          <select data-field="category">${fieldOptions('category', it.category)}</select>
+          <select data-field="style">${fieldOptions('style', it.style)}</select>
+          <select data-field="status">${fieldOptions('status', it.status)}</select>
         </div>
         <div class="row2">
           ${srcLink}
@@ -416,7 +467,20 @@ function renderItems() {
     });
     card.querySelectorAll('select').forEach(sel => {
       sel.addEventListener('change', async () => {
-        it[sel.dataset.field] = sel.value;
+        const field = sel.dataset.field;
+        if (sel.value === ADD_NEW) {
+          const labels = { room: 'Add Room', category: 'Add Category', style: 'Add Style' };
+          const name = await showPrompt(labels[field] || 'Add', 'Type a name', 'Add');
+          if (!name || !name.trim()) { sel.value = it[field] || ''; return; }
+          const val = name.trim();
+          await addCustomValue(field, val);
+          it[field] = val;
+          await updateItem(it);
+          populateFilters();
+          renderItems();
+          return;
+        }
+        it[field] = sel.value;
         await updateItem(it);
       });
     });
