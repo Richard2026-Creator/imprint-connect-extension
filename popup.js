@@ -208,6 +208,7 @@ els.dl.addEventListener('click', async () => {
   els.dl.disabled = true;
   const files = [];
   const records = [];   // metadata for manifest + credits
+  let seq = 0;          // sequential, gap-free numbering for saved images
 
   for (let i = 0; i < chosen.length; i++) {
     setStatus(`Processing image ${i + 1} of ${chosen.length}...`, false, true);
@@ -217,10 +218,12 @@ els.dl.addEventListener('click', async () => {
     if (!data || data.length < 1000) data = await tryFetch(pin.thumbnailUrl);
     if (!data || data.length <= 500) continue;
 
-    const ext = guessExt(pin.imageUrl);
-    const idx = String(i + 1).padStart(4, '0');
-    const name = `${idx}_${slug(pin.title) || 'pin'}${ext}`;
-    files.push({ name, data });
+    // Clean, predictable names inside an images/ subfolder. Real descriptions
+    // live in the manifest + source sheet, so filenames stay tidy.
+    seq++;
+    const ext = sniffExt(data, pin.imageUrl);
+    const path = `images/${String(seq).padStart(4, '0')}${ext}`;
+    files.push({ name: path, data });
 
     // Local color + thumbnail extraction (no network, no libraries).
     let colors = [];
@@ -235,9 +238,9 @@ els.dl.addEventListener('click', async () => {
     } catch (e) { /* color/thumbnail extraction is best-effort */ }
 
     records.push({
-      index: i + 1,
-      filename: name,
-      title: pin.title || '',
+      index: seq,
+      filename: path,
+      title: cleanTitle(pin.title),
       pinUrl: pin.pinUrl || '',
       imageUrl: pin.imageUrl || '',
       colors,
@@ -286,6 +289,31 @@ async function tryFetch(u) {
 function guessExt(u) {
   const m = (u || '').match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
   return m ? '.' + m[1].toLowerCase() : '.jpg';
+}
+
+// Determine the real image extension from the file's magic bytes, falling
+// back to the URL. Fixes cases where a WebP/PNG is served from a .jpg-looking
+// URL (or no extension at all).
+function sniffExt(bytes, url) {
+  const b = bytes;
+  if (b && b.length > 12) {
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return '.png';
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return '.jpg';
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return '.gif';
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 &&
+        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return '.webp';
+  }
+  return guessExt(url);
+}
+
+// Tidy Pinterest's auto-generated alt text into a readable caption.
+function cleanTitle(s) {
+  let t = (s || '').trim();
+  t = t.replace(/^this\s+(may\s+contain|contains|might\s+contain)\s*:?\s*/i, '');
+  t = t.replace(/^(may\s+contain|image\s+may\s+contain)\s*:?\s*/i, '');
+  t = t.trim();
+  if (t) t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t;
 }
 
 function textBytes(str) {
