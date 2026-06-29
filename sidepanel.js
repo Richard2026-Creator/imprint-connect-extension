@@ -8,11 +8,15 @@ const CATEGORIES = ['Lighting', 'Furniture', 'Textiles', 'Flooring', 'Wall & Pai
 const STYLES = ['Modern', 'Contemporary', 'Mid-Century', 'Japandi', 'Scandinavian', 'Traditional', 'Transitional', 'Industrial', 'Coastal', 'Bohemian', 'Minimalist', 'Farmhouse', 'Art Deco', 'Other'];
 const STATUSES = ['Proposed', 'Approved', 'Ordered', 'Rejected'];
 
+// The IMPRINT wordmark, recreated as crisp markup (used when no custom logo).
+const LOCKUP_HTML = '<div class="logo-lockup"><div class="imprint">IMPRINT<span class="tm">&#8482;</span></div><div class="rule"></div><div class="connect">Connect</div></div>';
+
 // --- State ---
 let currentProject = null;
 let items = [];                 // items for the current project
 let scanResults = [];           // pins from the latest scan
 const scanSelected = new Set(); // indices selected in the scan panel
+let brandLogo = '';             // user's custom logo as a data URL (optional)
 
 const el = (id) => document.getElementById(id);
 const ui = {
@@ -47,7 +51,14 @@ const ui = {
   modalTitle: el('modalTitle'),
   modalBody: el('modalBody'),
   modalOk: el('modalOk'),
-  modalCancel: el('modalCancel')
+  modalCancel: el('modalCancel'),
+  logo: el('logo'),
+  settingsBtn: el('settingsBtn'),
+  brandModal: el('brandModal'),
+  brandPreview: el('brandPreview'),
+  brandFile: el('brandFile'),
+  brandRemove: el('brandRemove'),
+  brandClose: el('brandClose')
 };
 
 function setStatus(msg, isError, spinner) {
@@ -119,8 +130,10 @@ function optionsHtml(values, selected, blankLabel) {
 // Projects
 // ---------------------------------------------------------------------
 async function init() {
-  const stored = await chrome.storage.local.get('namingMode');
+  const stored = await chrome.storage.local.get(['namingMode', 'brandLogo']);
   if (stored && stored.namingMode) ui.namingMode.value = stored.namingMode;
+  brandLogo = (stored && stored.brandLogo) || '';
+  applyBrand();
 
   let projects = await listProjects();
   if (projects.length === 0) {
@@ -129,6 +142,52 @@ async function init() {
   }
   renderProjectSelect(projects);
   await selectProject(projects[0].id);
+}
+
+// ---------------------------------------------------------------------
+// Branding (logo lockup + optional user logo for client PDFs)
+// ---------------------------------------------------------------------
+function applyBrand() {
+  ui.logo.innerHTML = brandLogo
+    ? `<img class="brand-img" src="${brandLogo}" alt="Brand logo">`
+    : LOCKUP_HTML;
+  renderBrandPreview();
+}
+
+function renderBrandPreview() {
+  ui.brandPreview.innerHTML = brandLogo
+    ? `<img src="${brandLogo}" alt="">`
+    : '<span class="none">Using the IMPRINT mark</span>';
+}
+
+function openBrand() {
+  renderBrandPreview();
+  ui.brandModal.style.display = 'flex';
+}
+
+async function onBrandFile() {
+  const file = ui.brandFile.files && ui.brandFile.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    setStatus('Logo is too large (max 2 MB). Try a smaller PNG.', true);
+    return;
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+  brandLogo = dataUrl;
+  await chrome.storage.local.set({ brandLogo });
+  applyBrand();
+  ui.brandFile.value = '';
+}
+
+async function removeBrand() {
+  brandLogo = '';
+  await chrome.storage.local.remove('brandLogo');
+  applyBrand();
 }
 
 function renderProjectSelect(projects) {
@@ -390,7 +449,8 @@ async function exportLibrary() {
   const roomFilter = ui.filterRoom.value && ui.filterRoom.value !== '__none__' ? ui.filterRoom.value : '';
   const board = {
     name: currentProject.name + (roomFilter ? ` — ${roomFilter}` : ''),
-    url: ''
+    url: '',
+    logo: brandLogo || ''
   };
 
   try {
@@ -433,6 +493,11 @@ ui.dedupeBtn.addEventListener('click', runDedupe);
 ui.namingMode.addEventListener('change', () => {
   chrome.storage.local.set({ namingMode: ui.namingMode.value });
 });
+ui.settingsBtn.addEventListener('click', openBrand);
+ui.brandFile.addEventListener('change', onBrandFile);
+ui.brandRemove.addEventListener('click', removeBrand);
+ui.brandClose.addEventListener('click', () => { ui.brandModal.style.display = 'none'; });
+ui.brandModal.addEventListener('click', (e) => { if (e.target === ui.brandModal) ui.brandModal.style.display = 'none'; });
 [ui.searchInput, ui.filterRoom, ui.filterCategory, ui.filterStyle, ui.filterStatus].forEach(elm => {
   elm.addEventListener('input', renderItems);
   elm.addEventListener('change', renderItems);

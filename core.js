@@ -353,6 +353,10 @@ function buildCreditsHtml(records, boardPalette, exportedAt, board) {
     `<div class="bp"><span class="bpsw" style="background:${esc(c.hex)}"></span><span class="bphex">${esc(c.hex)}</span></div>`
   ).join('');
 
+  const brandBlock = board.logo
+    ? `<div class="brandmark"><img src="${board.logo}" alt=""></div>`
+    : `<div class="brandmark"><div class="lockup"><div class="imprint">IMPRINT<span class="tm">&#8482;</span></div><div class="rule"></div><div class="connect">Connect</div></div></div>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -396,6 +400,13 @@ function buildCreditsHtml(records, boardPalette, exportedAt, board) {
   .toolbar{position:sticky;top:0;text-align:right;margin-bottom:18px;}
   .print{background:var(--charcoal);color:#F4F1EC;border:0;border-radius:999px;padding:10px 20px;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;}
   .foot{margin-top:36px;font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);text-align:center;}
+  .brandmark{margin-bottom:20px;}
+  .brandmark img{max-height:64px;max-width:280px;width:auto;display:block;}
+  .lockup{display:inline-flex;flex-direction:column;align-items:flex-start;}
+  .lockup .imprint{font-family:'Playfair Display',Georgia,serif;font-weight:600;font-size:30px;letter-spacing:6px;color:var(--charcoal);line-height:1;}
+  .lockup .imprint .tm{font-size:11px;vertical-align:super;letter-spacing:0;}
+  .lockup .rule{align-self:stretch;height:2px;background:var(--gold);margin:6px 0;}
+  .lockup .connect{font-family:'Inter',sans-serif;font-size:11px;font-weight:500;letter-spacing:9px;text-transform:uppercase;color:var(--charcoal-soft);align-self:center;}
   @media print{
     body{background:#fff;padding:0;}
     .toolbar{display:none;}
@@ -406,7 +417,8 @@ function buildCreditsHtml(records, boardPalette, exportedAt, board) {
 <body>
   <div class="wrap">
     <div class="toolbar"><button class="print" onclick="window.print()">Save as PDF</button></div>
-    <div class="eyebrow">IMPRINT Connect &middot; Source &amp; Credits Sheet</div>
+    ${brandBlock}
+    <div class="eyebrow">Source &amp; Credits Sheet</div>
     <h1>${esc(board.name)}</h1>
     <div class="sub">${records.length} images &middot; Exported ${esc(dateStr)}${board.url ? ` &middot; <a href="${esc(board.url)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;">Source</a>` : ''}</div>
 
