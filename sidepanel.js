@@ -41,13 +41,73 @@ const ui = {
   filterStatus: el('filterStatus'),
   itemCount: el('itemCount'),
   dedupeBtn: el('dedupeBtn'),
-  items: el('items')
+  namingMode: el('namingMode'),
+  items: el('items'),
+  modal: el('modal'),
+  modalTitle: el('modalTitle'),
+  modalBody: el('modalBody'),
+  modalOk: el('modalOk'),
+  modalCancel: el('modalCancel')
 };
 
 function setStatus(msg, isError, spinner) {
   ui.status.className = isError ? 'error' : '';
   ui.status.innerHTML = (spinner ? '<span class="spinner"></span>' : '') + (msg || '');
 }
+
+// ---------------------------------------------------------------------
+// Branded modal dialogs (replace window.prompt / window.confirm)
+// ---------------------------------------------------------------------
+let modalResolve = null;
+
+function closeModal(value) {
+  ui.modal.style.display = 'none';
+  ui.modalBody.innerHTML = '';
+  const r = modalResolve;
+  modalResolve = null;
+  if (r) r(value);
+}
+
+// Resolves to the entered string, or null if cancelled.
+function showPrompt(title, placeholder, okLabel) {
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+    ui.modalTitle.textContent = title;
+    ui.modalBody.innerHTML = `<input type="text" id="modalInput" placeholder="${esc(placeholder || '')}">`;
+    ui.modalOk.textContent = okLabel || 'Create';
+    ui.modalCancel.style.display = '';
+    ui.modal.style.display = 'flex';
+    const input = el('modalInput');
+    input.focus();
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') closeModal(input.value);
+      else if (e.key === 'Escape') closeModal(null);
+    });
+  });
+}
+
+// Resolves to true (confirmed) or false (cancelled).
+function showConfirm(title, message, okLabel) {
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+    ui.modalTitle.textContent = title;
+    ui.modalBody.innerHTML = `<div class="modal-msg">${esc(message)}</div>`;
+    ui.modalOk.textContent = okLabel || 'Confirm';
+    ui.modalCancel.style.display = '';
+    ui.modal.style.display = 'flex';
+  });
+}
+
+ui.modalOk.addEventListener('click', () => {
+  const input = el('modalInput');
+  closeModal(input ? input.value : true);
+});
+ui.modalCancel.addEventListener('click', () => {
+  closeModal(el('modalInput') ? null : false);
+});
+ui.modal.addEventListener('click', (e) => {
+  if (e.target === ui.modal) closeModal(el('modalInput') ? null : false);
+});
 
 function optionsHtml(values, selected, blankLabel) {
   const blank = `<option value="">${esc(blankLabel || '—')}</option>`;
@@ -59,6 +119,9 @@ function optionsHtml(values, selected, blankLabel) {
 // Projects
 // ---------------------------------------------------------------------
 async function init() {
+  const stored = await chrome.storage.local.get('namingMode');
+  if (stored && stored.namingMode) ui.namingMode.value = stored.namingMode;
+
   let projects = await listProjects();
   if (projects.length === 0) {
     const p = await createProject('My First Project', '');
@@ -86,17 +149,15 @@ async function selectProject(id) {
 function renderProjectMeta() {
   if (!currentProject) { ui.projectMeta.textContent = ''; return; }
   const parts = [];
-  if (currentProject.client) parts.push(`Client: <b>${esc(currentProject.client)}</b>`);
   parts.push(`<b>${items.length}</b> images`);
   if (currentProject.rooms.length) parts.push(`<b>${currentProject.rooms.length}</b> rooms`);
   ui.projectMeta.innerHTML = parts.join(' &middot; ');
 }
 
 async function newProject() {
-  const name = window.prompt('Project name:', '');
+  const name = await showPrompt('New Project', 'e.g. Julie – Living Rooms', 'Create');
   if (name === null) return;
-  const client = window.prompt('Client name (optional):', '') || '';
-  const p = await createProject(name || 'Untitled Project', client);
+  const p = await createProject((name || '').trim() || 'Untitled Project', '');
   renderProjectSelect(await listProjects());
   await selectProject(p.id);
   setStatus(`Created project "${esc(p.name)}".`, false);
@@ -104,7 +165,7 @@ async function newProject() {
 
 async function removeProject() {
   if (!currentProject) return;
-  const ok = window.confirm(`Delete "${currentProject.name}" and all ${items.length} saved images? This cannot be undone.`);
+  const ok = await showConfirm('Delete Project', `Delete "${currentProject.name}" and all ${items.length} saved images? This cannot be undone.`, 'Delete');
   if (!ok) return;
   await deleteProject(currentProject.id);
   let projects = await listProjects();
@@ -231,7 +292,8 @@ function filteredItems() {
   const sty = ui.filterStyle.value;
   const sta = ui.filterStatus.value;
   return items.filter(it => {
-    if (q && !(cleanTitle(it.title).toLowerCase().includes(q) || (it.title || '').toLowerCase().includes(q))) return false;
+    const hay = ((it.caption || '') + ' ' + autoLabel(it.title) + ' ' + (it.title || '')).toLowerCase();
+    if (q && !hay.includes(q)) return false;
     if (room === '__none__') { if (it.room) return false; }
     else if (room && it.room !== room) return false;
     if (cat && it.category !== cat) return false;
@@ -267,14 +329,14 @@ function renderItems() {
   list.forEach(it => {
     const card = document.createElement('div');
     card.className = 'item';
-    const title = esc(cleanTitle(it.title) || 'Untitled');
+    const captionVal = esc((it.caption || '').trim() || autoLabel(it.title));
     const srcLink = it.pinUrl
       ? `<a class="src" href="${esc(it.pinUrl)}" target="_blank" rel="noopener">Source &rarr;</a>`
       : `<span class="src" style="color:var(--muted-light)">No source</span>`;
     card.innerHTML = `
       <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
       <div class="body">
-        <div class="title" title="${title}">${title}</div>
+        <input class="caption" type="text" value="${captionVal}" placeholder="Add a name..." spellcheck="false">
         <div class="tagselects">
           <select data-field="room">${optionsHtml(rooms, it.room, 'Room')}</select>
           <select data-field="category">${optionsHtml(CATEGORIES, it.category, 'Category')}</select>
@@ -287,6 +349,11 @@ function renderItems() {
         </div>
       </div>`;
 
+    const cap = card.querySelector('.caption');
+    cap.addEventListener('change', async () => {
+      it.caption = cap.value.trim();
+      await updateItem(it);
+    });
     card.querySelectorAll('select').forEach(sel => {
       sel.addEventListener('change', async () => {
         it[sel.dataset.field] = sel.value;
@@ -326,8 +393,9 @@ async function exportLibrary() {
   };
 
   try {
-    const pack = await buildLibraryPack(list, board, (done, total) => {
-      setStatus(`Processing image ${done} of ${total}...`, false, true);
+    const pack = await buildLibraryPack(list, board, {
+      naming: ui.namingMode.value,
+      onProgress: (done, total) => setStatus(`Processing image ${done} of ${total}...`, false, true)
     });
     if (!pack) {
       setStatus('Could not download any images. The source URLs may have expired.', true);
@@ -361,6 +429,9 @@ ui.scanNoneBtn.addEventListener('click', () => { scanSelected.clear(); renderSca
 ui.addToLibraryBtn.addEventListener('click', addSelectedToLibrary);
 ui.cancelScanBtn.addEventListener('click', () => { hideScanPanel(); setStatus('', false); });
 ui.dedupeBtn.addEventListener('click', runDedupe);
+ui.namingMode.addEventListener('change', () => {
+  chrome.storage.local.set({ namingMode: ui.namingMode.value });
+});
 [ui.searchInput, ui.filterRoom, ui.filterCategory, ui.filterStyle, ui.filterStatus].forEach(elm => {
   elm.addEventListener('input', renderItems);
   elm.addEventListener('change', renderItems);

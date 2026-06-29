@@ -139,6 +139,7 @@ async function addItems(projectId, pins, room) {
       thumbnailUrl: p.thumbnailUrl || p.imageUrl,
       pinUrl: p.pinUrl || '',
       title: p.title || '',
+      caption: '',
       category: '',
       style: '',
       status: '',

@@ -125,6 +125,36 @@ function cleanTitle(s) {
   return t;
 }
 
+// A tidy, human-friendly auto label for filenames / captions. Strips
+// Pinterest's auto-caption noise and superfluous lead-ins ("an image of",
+// "photo of", "there is a", a leading article), trims to a few words, and
+// Title-Cases the result. e.g. "this may contain: an image of a cozy
+// living room with wall art" -> "Cozy Living Room With Wall Art".
+function autoLabel(s) {
+  let t = cleanTitle(s);
+  t = t.replace(/^(an?\s+)?(image|images|photo|photograph|picture|pic|close[\s-]?up|snapshot|view|rendering|render)\s+(of\s+)?/i, '');
+  t = t.replace(/^there\s+(is|are)\s+/i, '');
+  t = t.replace(/^(a|an|the)\s+/i, '');
+  t = t.trim();
+  if (!t) return '';
+  const words = t.split(/\s+/).slice(0, 8);
+  t = words.join(' ');
+  t = t.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return t;
+}
+
+// Make a string safe to use as a file name (removes characters Windows /
+// macOS disallow, collapses whitespace, caps the length).
+function fileSafe(s) {
+  return (s || '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/[\u0000-\u001F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+    .trim();
+}
+
 function guessExt(u) {
   const m = (u || '').match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
   return m ? '.' + m[1].toLowerCase() : '.jpg';
@@ -398,7 +428,10 @@ function buildCreditsHtml(records, boardPalette, exportedAt, board) {
 //   onProgress(done, total) optional
 // Returns { blob, count, palette } or null if nothing could be downloaded.
 // ---------------------------------------------------------------------
-async function buildLibraryPack(items, board, onProgress) {
+async function buildLibraryPack(items, board, options) {
+  options = options || {};
+  const naming = options.naming || 'numbered';   // 'numbered' | 'auto' | 'custom'
+  const onProgress = options.onProgress;
   const files = [];
   const records = [];
   let seq = 0;
@@ -413,7 +446,17 @@ async function buildLibraryPack(items, board, onProgress) {
 
     seq++;
     const ext = sniffExt(data, it.imageUrl);
-    const path = `images/${String(seq).padStart(4, '0')}${ext}`;
+    const pad = String(seq).padStart(4, '0');
+
+    // The caption shown in the panel / source sheet (user name wins).
+    const displayTitle = (it.caption || '').trim() || autoLabel(it.title);
+
+    // The descriptive part of the file name, per the chosen naming mode.
+    let label = '';
+    if (naming === 'auto') label = autoLabel(it.title);
+    else if (naming === 'custom') label = (it.caption || '').trim() || autoLabel(it.title);
+    const safe = fileSafe(label);
+    const path = `images/${pad}${safe ? ' - ' + safe : ''}${ext}`;
     files.push({ name: path, data });
 
     let colors = [];
@@ -430,7 +473,7 @@ async function buildLibraryPack(items, board, onProgress) {
     records.push({
       index: seq,
       filename: path,
-      title: cleanTitle(it.title),
+      title: displayTitle,
       room: it.room || '',
       category: it.category || '',
       style: it.style || '',

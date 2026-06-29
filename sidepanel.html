@@ -138,10 +138,14 @@
       background: #eee; border: 1px solid var(--line);
     }
     .item .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-    .item .title {
-      font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--charcoal);
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    .item .caption {
+      width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px;
+      padding: 3px 5px; font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--charcoal);
+      font-family: 'Inter', sans-serif;
     }
+    .item .caption:hover { border-color: var(--line); }
+    .item .caption:focus { border-color: var(--gold-soft); background: #fff; outline: none; }
+    .item .caption::placeholder { color: var(--muted-light); font-weight: 400; font-style: italic; }
     .item .tagselects { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
     .item .tagselects select { padding: 5px 6px; font-size: 10px; border-radius: 7px; }
     .item .row2 { display: flex; justify-content: space-between; align-items: center; }
@@ -164,6 +168,31 @@
       color: var(--muted-light); font-size: 8px; font-weight: 500; letter-spacing: 1.4px;
       text-transform: uppercase; text-align: center;
     }
+
+    /* --- Naming-mode row --- */
+    .naming-row { display: flex; flex-direction: column; gap: 5px; }
+
+    /* --- Branded modal (replaces window.prompt / confirm) --- */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(43, 41, 38, 0.45);
+      display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px;
+    }
+    .modal {
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+      padding: 22px 20px; width: 100%; max-width: 300px;
+      box-shadow: 0 16px 50px rgba(43, 41, 38, 0.28);
+    }
+    .modal-eyebrow {
+      font-size: 9px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+    }
+    .modal-title {
+      font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 500;
+      font-size: 21px; color: var(--charcoal); margin-top: 4px;
+    }
+    .modal-body { margin: 14px 0 18px; }
+    .modal-msg { font-size: 12px; line-height: 1.6; color: var(--charcoal-soft); }
+    .modal-actions { display: flex; gap: 8px; }
+    .modal-actions .btn { flex: 1; padding: 11px; }
   </style>
 </head>
 <body>
@@ -217,7 +246,15 @@
   <!-- Filters -->
   <div class="filters" id="filters" style="display:none;">
     <hr>
-    <input type="text" id="searchInput" placeholder="Search titles...">
+    <div class="naming-row">
+      <label class="field-label" style="margin:0;">Export file names</label>
+      <select id="namingMode">
+        <option value="numbered">Numbered (0001, 0002)</option>
+        <option value="auto">Auto from description</option>
+        <option value="custom">My names (type your own)</option>
+      </select>
+    </div>
+    <input type="text" id="searchInput" placeholder="Search names...">
     <div class="filter-grid">
       <select id="filterRoom"></select>
       <select id="filterCategory"></select>
@@ -235,6 +272,19 @@
 
   <div class="footer">
     Stored Locally On This Device &middot; Not Affiliated With Pinterest
+  </div>
+
+  <!-- Branded modal -->
+  <div class="modal-overlay" id="modal" style="display:none;">
+    <div class="modal">
+      <div class="modal-eyebrow">IMPRINT Connect</div>
+      <div class="modal-title" id="modalTitle"></div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" id="modalCancel">Cancel</button>
+        <button class="btn btn-primary" id="modalOk">OK</button>
+      </div>
+    </div>
   </div>
 
   <script src="core.js"></script>
