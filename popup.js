@@ -178,7 +178,7 @@ els.scan.addEventListener('click', async () => {
       setStatus('No pins found. Make sure you are viewing a board page (the grid of pins is visible).', true);
     } else {
       pins.forEach((_, i) => selected.add(i));
-      setStatus(`Found ${pins.length} pins on "${boardName}". Click any pin to toggle it, then Download.`, false);
+      setStatus(`Found ${pins.length} pins on "${esc(boardName)}". Click any pin to toggle it, then Download.`, false);
       renderGrid();
     }
   } catch (e) {
@@ -268,8 +268,8 @@ els.dl.addEventListener('click', async () => {
   const url = URL.createObjectURL(blob);
   const zipName = `imprint-${slug(boardName) || 'board'}.zip`;
 
-  chrome.downloads.download({ url, filename: zipName, saveAs: true }, () => {
-    setStatus(`Done. Saved ${records.length} images with source sheet, palette & manifest.`, false);
+  chrome.downloads.download({ url, filename: zipName, saveAs: false }, () => {
+    setStatus(`Done. Saved ${records.length} images to Downloads (with source sheet, palette & manifest).`, false);
     els.dl.disabled = false;
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   });
