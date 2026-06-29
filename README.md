@@ -26,7 +26,18 @@ It runs entirely in your browser using your existing Pinterest session — no se
 2. Click the IMPRINT Connect extension icon.
 3. Click **Scan Board** and keep the popup open while it scrolls and collects pins.
 4. Select the images you want.
-5. Click **Download ZIP**.
+5. Click **Download Library Pack**.
+
+### What's in the download
+
+The ZIP is named after the board (`imprint-<board-name>.zip`) and contains:
+
+```
+source-sheet.html   Branded, printable source & credits sheet (open in a browser, "Save as PDF")
+manifest.csv        Spreadsheet of every image: title, Pinterest source link, colors
+manifest.json       Same data as structured JSON, plus the board color palette
+images/             The images, named sequentially (0001.jpg, 0002.png, ...)
+```
 
 ## Files
 
