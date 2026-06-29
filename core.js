@@ -1,57 +1,21 @@
-// --- State ---
-let pins = [];           // [{ imageUrl, thumbnailUrl, title, pinUrl }]
-let boardName = '';
-let boardUrl = '';
-const selected = new Set();
+// =====================================================================
+// IMPRINT Connect — core.js
+// Reusable, UI-agnostic logic shared by the side panel:
+//   - Pinterest board scanning (injected into the page)
+//   - Local color-palette extraction (Canvas API)
+//   - Library Pack export (images/ + manifest.csv/json + source sheet)
+//   - Minimal STORE-method ZIP builder
+// Everything runs locally in the browser. No servers, no libraries, no cost.
+// =====================================================================
 
-const els = {
-  scan: document.getElementById('scanBtn'),
-  all: document.getElementById('allBtn'),
-  none: document.getElementById('noneBtn'),
-  dl: document.getElementById('dlBtn'),
-  count: document.getElementById('count'),
-  status: document.getElementById('status'),
-  grid: document.getElementById('grid')
-};
-
-function setStatus(msg, isError, spinner) {
-  els.status.className = isError ? 'error' : '';
-  els.status.innerHTML = (spinner ? '<span class="spinner"></span>' : '') + (msg || '');
-}
-
-function updateCount() {
-  els.count.textContent = pins.length ? `${selected.size} of ${pins.length} selected` : '';
-  els.dl.disabled = selected.size === 0;
-}
-
-function renderGrid() {
-  els.grid.innerHTML = '';
-  pins.forEach((pin, i) => {
-    const cell = document.createElement('div');
-    cell.className = 'pin' + (selected.has(i) ? ' selected' : '');
-    cell.innerHTML = `<div class="chk"></div><img src="${pin.thumbnailUrl}" referrerpolicy="no-referrer" loading="lazy" alt="">`;
-    cell.addEventListener('click', () => {
-      if (selected.has(i)) selected.delete(i); else selected.add(i);
-      cell.classList.toggle('selected');
-      updateCount();
-    });
-    els.grid.appendChild(cell);
-  });
-  updateCount();
-}
-
-// --- This function is injected into the Pinterest tab and runs there ---
-// It scrolls the board and accumulates pin image URLs (Pinterest recycles
-// off-screen pins, so we must collect continuously while scrolling).
-//
-// Pinterest appends a "More ideas" / "More like this" section of SUGGESTED
-// pins below the actual board. We only want pins saved to the board, so we
-// find the position of that section and ignore anything at or below it, and
-// stop scrolling once we reach it.
+// ---------------------------------------------------------------------
+// Injected into the Pinterest tab. Scrolls the board and accumulates pin
+// image URLs + provenance, ignoring the "More ideas" suggestions section.
+// Must be fully self-contained (it is serialized by chrome.scripting).
+// ---------------------------------------------------------------------
 async function scrollAndCollect(maxPins) {
   const collected = new Map();
 
-  // Best-effort board name + url for provenance.
   function getBoardName() {
     const h = document.querySelector('h1');
     const ht = h && h.textContent ? h.textContent.trim() : '';
@@ -60,20 +24,14 @@ async function scrollAndCollect(maxPins) {
     return t || 'Pinterest Board';
   }
 
-  // Find the vertical document position where the suggestions section begins.
-  // Returns Infinity if no boundary is found yet (still within the board).
   function getBoundaryY() {
     const headingMatch = /^(more ideas|more like this|more to explore|ideas you might love|inspired by|related ideas)/i;
-    // 1) Explicit Pinterest test ids for the related/more section
     let marker = document.querySelector('[data-test-id="board-feed-related-pins"], [data-test-id="moreIdeas"], [data-test-id="more-ideas-header"]');
     if (marker) return marker.getBoundingClientRect().top + window.scrollY;
-    // 2) Any heading element whose text starts with a known suggestions label
     const headings = document.querySelectorAll('h1, h2, h3, h4, [role="heading"]');
     for (const h of headings) {
       const t = (h.textContent || '').trim();
-      if (headingMatch.test(t)) {
-        return h.getBoundingClientRect().top + window.scrollY;
-      }
+      if (headingMatch.test(t)) return h.getBoundingClientRect().top + window.scrollY;
     }
     return Infinity;
   }
@@ -82,7 +40,6 @@ async function scrollAndCollect(maxPins) {
     let nodes = Array.from(document.querySelectorAll('[data-test-id="pin"], [data-test-id="pinWrapper"]'));
     if (nodes.length === 0) nodes = Array.from(document.querySelectorAll('a[href*="/pin/"]'));
     nodes.forEach((node) => {
-      // Skip pins that sit at or below the suggestions boundary
       const top = node.getBoundingClientRect().top + window.scrollY;
       if (top >= boundaryY) return;
 
@@ -90,7 +47,7 @@ async function scrollAndCollect(maxPins) {
       if (!img) return;
       let src = img.src || img.getAttribute('data-src') || '';
       if (!src.includes('pinimg.com')) return;
-      if (/\/(30x30|45x45|50x50|60x60|75x75|140x140)\//.test(src)) return; // skip avatars/icons
+      if (/\/(30x30|45x45|50x50|60x60|75x75|140x140)\//.test(src)) return;
       let best = src;
       const srcset = img.getAttribute('srcset');
       if (srcset) {
@@ -99,7 +56,6 @@ async function scrollAndCollect(maxPins) {
       }
       const originalUrl = best.replace(/\/\d+x\d*\//, '/originals/');
 
-      // Provenance: the pin's own Pinterest URL (where it was saved from).
       let pinUrl = '';
       const anchor = node.matches && node.matches('a[href*="/pin/"]') ? node : node.querySelector('a[href*="/pin/"]');
       if (anchor) {
@@ -123,21 +79,14 @@ async function scrollAndCollect(maxPins) {
   for (let i = 0; i < 500; i++) {
     const before = collected.size;
     if (before >= maxPins) break;
-
-    // If the suggestions section is already loaded and we've scrolled to it,
-    // stop — everything below is Pinterest's recommendations, not the board.
     const boundaryY = getBoundaryY();
-    if (boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY) {
-      break;
-    }
-
+    if (boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY) break;
     window.scrollBy(0, window.innerHeight * 1.5);
     await new Promise(r => setTimeout(r, 1200));
     harvest(getBoundaryY());
-
     if (collected.size === before) {
       stable++;
-      if (stable >= 6) break; // reached the bottom
+      if (stable >= 6) break;
     } else {
       stable = 0;
     }
@@ -150,140 +99,30 @@ async function scrollAndCollect(maxPins) {
   };
 }
 
-// --- Scan button ---
-els.scan.addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !/pinterest\.com\//.test(tab.url || '')) {
-    setStatus('Open a Pinterest board in this tab first, then click Scan board.', true);
-    return;
-  }
+// ---------------------------------------------------------------------
+// Small string / file helpers
+// ---------------------------------------------------------------------
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
 
-  els.scan.disabled = true;
-  pins = [];
-  selected.clear();
-  els.grid.innerHTML = '';
-  setStatus('Scanning and scrolling the board... this can take 20-60 seconds. Keep this popup open.', false, true);
+function slug(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
 
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: scrollAndCollect,
-      args: [1000]
-    });
-    const out = (results && results[0] && results[0].result) ? results[0].result : {};
-    pins = out.pins || [];
-    boardName = out.boardName || 'Pinterest Board';
-    boardUrl = out.boardUrl || (tab.url || '');
-    if (pins.length === 0) {
-      setStatus('No pins found. Make sure you are viewing a board page (the grid of pins is visible).', true);
-    } else {
-      pins.forEach((_, i) => selected.add(i));
-      setStatus(`Found ${pins.length} pins on "${esc(boardName)}". Click any pin to toggle it, then Download.`, false);
-      renderGrid();
-    }
-  } catch (e) {
-    setStatus('Scan failed: ' + e.message, true);
-  } finally {
-    els.scan.disabled = false;
-  }
-});
-
-els.all.addEventListener('click', () => {
-  pins.forEach((_, i) => selected.add(i));
-  document.querySelectorAll('.pin').forEach(c => c.classList.add('selected'));
-  updateCount();
-});
-
-els.none.addEventListener('click', () => {
-  selected.clear();
-  document.querySelectorAll('.pin').forEach(c => c.classList.remove('selected'));
-  updateCount();
-});
-
-// --- Download as ZIP (images + provenance manifest + branded credits sheet) ---
-els.dl.addEventListener('click', async () => {
-  const chosen = pins.filter((_, i) => selected.has(i));
-  if (!chosen.length) return;
-
-  els.dl.disabled = true;
-  const files = [];
-  const records = [];   // metadata for manifest + credits
-  let seq = 0;          // sequential, gap-free numbering for saved images
-
-  for (let i = 0; i < chosen.length; i++) {
-    setStatus(`Processing image ${i + 1} of ${chosen.length}...`, false, true);
-    const pin = chosen[i];
-
-    let data = await tryFetch(pin.imageUrl);
-    if (!data || data.length < 1000) data = await tryFetch(pin.thumbnailUrl);
-    if (!data || data.length <= 500) continue;
-
-    // Clean, predictable names inside an images/ subfolder. Real descriptions
-    // live in the manifest + source sheet, so filenames stay tidy.
-    seq++;
-    const ext = sniffExt(data, pin.imageUrl);
-    const path = `images/${String(seq).padStart(4, '0')}${ext}`;
-    files.push({ name: path, data });
-
-    // Local color + thumbnail extraction (no network, no libraries).
-    let colors = [];
-    let thumb = '';
-    try {
-      const ic = await decodeToCanvas(data, 200);
-      if (ic) {
-        const imgData = ic.ctx.getImageData(0, 0, ic.canvas.width, ic.canvas.height);
-        colors = quantize(imgData, 5);
-        thumb = ic.canvas.toDataURL('image/jpeg', 0.7);
-      }
-    } catch (e) { /* color/thumbnail extraction is best-effort */ }
-
-    records.push({
-      index: seq,
-      filename: path,
-      title: cleanTitle(pin.title),
-      pinUrl: pin.pinUrl || '',
-      imageUrl: pin.imageUrl || '',
-      colors,
-      thumb
-    });
-  }
-
-  if (!files.length) {
-    setStatus('Could not download any images.', true);
-    els.dl.disabled = false;
-    return;
-  }
-
-  setStatus('Building palette and source sheet...', false, true);
-  const boardPalette = mergePalette(records.map(r => r.colors), 8);
-  const exportedAt = new Date().toISOString();
-
-  // Provenance + creative artifacts bundled alongside the images.
-  files.push({ name: 'manifest.csv', data: textBytes(buildCsv(records)) });
-  files.push({ name: 'manifest.json', data: textBytes(buildJson(records, boardPalette, exportedAt)) });
-  files.push({ name: 'source-sheet.html', data: textBytes(buildCreditsHtml(records, boardPalette, exportedAt)) });
-
-  setStatus('Building ZIP...', false, true);
-  const blob = buildZip(files);
-  const url = URL.createObjectURL(blob);
-  const zipName = `imprint-${slug(boardName) || 'board'}.zip`;
-
-  chrome.downloads.download({ url, filename: zipName, saveAs: false }, () => {
-    setStatus(`Done. Saved ${records.length} images to Downloads (with source sheet, palette & manifest).`, false);
-    els.dl.disabled = false;
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  });
-});
-
-async function tryFetch(u) {
-  try {
-    const res = await fetch(u);
-    if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    return new Uint8Array(buf);
-  } catch (e) {
-    return null;
-  }
+function cleanTitle(s) {
+  let t = (s || '').trim();
+  t = t.replace(/^this\s+(may\s+contain|contains|might\s+contain)\s*:?\s*/i, '');
+  t = t.replace(/^(may\s+contain|image\s+may\s+contain)\s*:?\s*/i, '');
+  t = t.trim();
+  if (t) t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t;
 }
 
 function guessExt(u) {
@@ -291,9 +130,6 @@ function guessExt(u) {
   return m ? '.' + m[1].toLowerCase() : '.jpg';
 }
 
-// Determine the real image extension from the file's magic bytes, falling
-// back to the URL. Fixes cases where a WebP/PNG is served from a .jpg-looking
-// URL (or no extension at all).
 function sniffExt(bytes, url) {
   const b = bytes;
   if (b && b.length > 12) {
@@ -306,32 +142,24 @@ function sniffExt(bytes, url) {
   return guessExt(url);
 }
 
-// Tidy Pinterest's auto-generated alt text into a readable caption.
-function cleanTitle(s) {
-  let t = (s || '').trim();
-  t = t.replace(/^this\s+(may\s+contain|contains|might\s+contain)\s*:?\s*/i, '');
-  t = t.replace(/^(may\s+contain|image\s+may\s+contain)\s*:?\s*/i, '');
-  t = t.trim();
-  if (t) t = t.charAt(0).toUpperCase() + t.slice(1);
-  return t;
-}
-
 function textBytes(str) {
   return new TextEncoder().encode(str);
 }
 
-// Filename-safe slug from a pin title / board name.
-function slug(s) {
-  return (s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
+async function tryFetch(u) {
+  try {
+    const res = await fetch(u);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    return new Uint8Array(buf);
+  } catch (e) {
+    return null;
+  }
 }
 
-// --- Color extraction (Canvas API, fully local) ---
-
-// Decode raw image bytes into a downscaled canvas for sampling.
+// ---------------------------------------------------------------------
+// Color extraction (Canvas API, fully local)
+// ---------------------------------------------------------------------
 async function decodeToCanvas(bytes, maxSize) {
   if (typeof createImageBitmap !== 'function') return null;
   const blob = new Blob([bytes]);
@@ -359,14 +187,11 @@ function rgbToHex(r, g, b) {
   return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-// Quantize an ImageData into up to `maxColors` representative colors.
-// Buckets by 4 bits/channel, averages real pixels per bucket, then greedily
-// picks the most frequent buckets that are visually distinct from each other.
 function quantize(imageData, maxColors) {
   const d = imageData.data;
   const buckets = new Map();
   for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < 125) continue; // skip transparent pixels
+    if (d[i + 3] < 125) continue;
     const r = d[i], g = d[i + 1], b = d[i + 2];
     const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
     let bk = buckets.get(key);
@@ -388,13 +213,11 @@ function quantize(imageData, maxColors) {
   return picked.map(p => ({ hex: rgbToHex(p.rgb[0], p.rgb[1], p.rgb[2]), rgb: p.rgb }));
 }
 
-// Merge per-image palettes into one board-level scheme. Colors that recur
-// across multiple images (within a distance threshold) rank highest.
 function mergePalette(paletteList, maxColors) {
-  const clusters = []; // { rgb, weight }
-  paletteList.forEach((palette, imgIdx) => {
+  const clusters = [];
+  paletteList.forEach((palette) => {
     (palette || []).forEach((color, rank) => {
-      const weight = (palette.length - rank); // top colors weigh more
+      const weight = (palette.length - rank);
       const existing = clusters.find(c => colorDist(c, color) < 42);
       if (existing) {
         existing.weight += weight;
@@ -407,21 +230,26 @@ function mergePalette(paletteList, maxColors) {
   return clusters.slice(0, maxColors).map(c => ({ hex: c.hex, rgb: c.rgb }));
 }
 
-// --- Manifest builders ---
-
+// ---------------------------------------------------------------------
+// Manifest builders
+// ---------------------------------------------------------------------
 function csvCell(v) {
   const s = (v == null ? '' : String(v));
   return '"' + s.replace(/"/g, '""') + '"';
 }
 
 function buildCsv(records) {
-  const header = ['index', 'filename', 'title', 'pin_url', 'image_url', 'colors'];
+  const header = ['index', 'filename', 'title', 'room', 'category', 'style', 'status', 'pin_url', 'image_url', 'colors'];
   const rows = [header.map(csvCell).join(',')];
   for (const r of records) {
     rows.push([
       csvCell(r.index),
       csvCell(r.filename),
       csvCell(r.title),
+      csvCell(r.room),
+      csvCell(r.category),
+      csvCell(r.style),
+      csvCell(r.status),
       csvCell(r.pinUrl),
       csvCell(r.imageUrl),
       csvCell((r.colors || []).map(c => c.hex).join(' | '))
@@ -430,10 +258,10 @@ function buildCsv(records) {
   return rows.join('\r\n');
 }
 
-function buildJson(records, boardPalette, exportedAt) {
+function buildJson(records, boardPalette, exportedAt, board) {
   return JSON.stringify({
-    board: boardName,
-    boardUrl,
+    project: board.name,
+    source: board.url || '',
     exportedAt,
     palette: boardPalette,
     imageCount: records.length,
@@ -441,6 +269,10 @@ function buildJson(records, boardPalette, exportedAt) {
       index: r.index,
       filename: r.filename,
       title: r.title,
+      room: r.room,
+      category: r.category,
+      style: r.style,
+      status: r.status,
       pinUrl: r.pinUrl,
       imageUrl: r.imageUrl,
       colors: r.colors
@@ -448,14 +280,9 @@ function buildJson(records, boardPalette, exportedAt) {
   }, null, 2);
 }
 
-// --- Branded Source & Credits sheet (self-contained HTML, print-to-PDF) ---
-
-function esc(s) {
-  return (s == null ? '' : String(s)).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[ch]));
-}
-
+// ---------------------------------------------------------------------
+// Branded Source & Credits sheet (self-contained HTML, print-to-PDF)
+// ---------------------------------------------------------------------
 function swatchRow(colors) {
   if (!colors || !colors.length) return '';
   return '<div class="swatches">' + colors.map(c =>
@@ -463,7 +290,13 @@ function swatchRow(colors) {
   ).join('') + '</div>';
 }
 
-function buildCreditsHtml(records, boardPalette, exportedAt) {
+function tagLine(r) {
+  const bits = [r.room, r.category, r.style, r.status].filter(Boolean);
+  if (!bits.length) return '';
+  return `<div class="tags">${bits.map(b => `<span class="tag">${esc(b)}</span>`).join('')}</div>`;
+}
+
+function buildCreditsHtml(records, boardPalette, exportedAt, board) {
   const dateStr = new Date(exportedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
   const cards = records.map(r => {
@@ -479,6 +312,7 @@ function buildCreditsHtml(records, boardPalette, exportedAt) {
         <div class="meta">
           <div class="t">${esc(r.title || 'Untitled')}</div>
           <div class="fn">${esc(r.filename)}</div>
+          ${tagLine(r)}
           ${link}
           ${swatchRow(r.colors)}
         </div>
@@ -494,7 +328,7 @@ function buildCreditsHtml(records, boardPalette, exportedAt) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(boardName)} — Source Sheet | IMPRINT Connect</title>
+<title>${esc(board.name)} — Source Sheet | IMPRINT Connect</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
@@ -521,6 +355,8 @@ function buildCreditsHtml(records, boardPalette, exportedAt) {
   .meta{display:flex;flex-direction:column;gap:6px;min-width:0;}
   .t{font-weight:600;font-size:13px;line-height:1.35;}
   .fn{font-size:10px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0;}
+  .tag{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-soft);border-radius:999px;padding:2px 8px;}
   .src{font-size:11px;color:var(--gold);text-decoration:none;}
   .src:hover{text-decoration:underline;}
   .src.muted{color:var(--muted);}
@@ -541,10 +377,10 @@ function buildCreditsHtml(records, boardPalette, exportedAt) {
   <div class="wrap">
     <div class="toolbar"><button class="print" onclick="window.print()">Save as PDF</button></div>
     <div class="eyebrow">IMPRINT Connect &middot; Source &amp; Credits Sheet</div>
-    <h1>${esc(boardName)}</h1>
-    <div class="sub">${records.length} images &middot; Exported ${esc(dateStr)}${boardUrl ? ` &middot; <a href="${esc(boardUrl)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;">Original board</a>` : ''}</div>
+    <h1>${esc(board.name)}</h1>
+    <div class="sub">${records.length} images &middot; Exported ${esc(dateStr)}${board.url ? ` &middot; <a href="${esc(board.url)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;">Source</a>` : ''}</div>
 
-    ${boardPalette.length ? `<div class="eyebrow" style="margin-top:26px;">Board Palette</div><div class="board-palette">${boardSwatches}</div>` : ''}
+    ${boardPalette.length ? `<div class="eyebrow" style="margin-top:26px;">Palette</div><div class="board-palette">${boardSwatches}</div>` : ''}
 
     <hr>
     <div class="grid">${cards}</div>
@@ -555,9 +391,71 @@ function buildCreditsHtml(records, boardPalette, exportedAt) {
 </html>`;
 }
 
-// --- Minimal ZIP builder (STORE method, no compression) ---
-// Images are already compressed (JPEG/PNG), so storing is fine and avoids
-// needing any compression library in the browser.
+// ---------------------------------------------------------------------
+// Library Pack export: fetch images, extract colors, bundle a clean ZIP.
+//   items: [{ imageUrl, thumbnailUrl, pinUrl, title, room, category, style, status }]
+//   board: { name, url }
+//   onProgress(done, total) optional
+// Returns { blob, count, palette } or null if nothing could be downloaded.
+// ---------------------------------------------------------------------
+async function buildLibraryPack(items, board, onProgress) {
+  const files = [];
+  const records = [];
+  let seq = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    if (onProgress) onProgress(i + 1, items.length);
+    const it = items[i];
+
+    let data = await tryFetch(it.imageUrl);
+    if (!data || data.length < 1000) data = await tryFetch(it.thumbnailUrl);
+    if (!data || data.length <= 500) continue;
+
+    seq++;
+    const ext = sniffExt(data, it.imageUrl);
+    const path = `images/${String(seq).padStart(4, '0')}${ext}`;
+    files.push({ name: path, data });
+
+    let colors = [];
+    let thumb = '';
+    try {
+      const ic = await decodeToCanvas(data, 200);
+      if (ic) {
+        const imgData = ic.ctx.getImageData(0, 0, ic.canvas.width, ic.canvas.height);
+        colors = quantize(imgData, 5);
+        thumb = ic.canvas.toDataURL('image/jpeg', 0.7);
+      }
+    } catch (e) { /* best-effort */ }
+
+    records.push({
+      index: seq,
+      filename: path,
+      title: cleanTitle(it.title),
+      room: it.room || '',
+      category: it.category || '',
+      style: it.style || '',
+      status: it.status || '',
+      pinUrl: it.pinUrl || '',
+      imageUrl: it.imageUrl || '',
+      colors,
+      thumb
+    });
+  }
+
+  if (!files.length) return null;
+
+  const palette = mergePalette(records.map(r => r.colors), 8);
+  const exportedAt = new Date().toISOString();
+  files.push({ name: 'manifest.csv', data: textBytes(buildCsv(records)) });
+  files.push({ name: 'manifest.json', data: textBytes(buildJson(records, palette, exportedAt, board)) });
+  files.push({ name: 'source-sheet.html', data: textBytes(buildCreditsHtml(records, palette, exportedAt, board)) });
+
+  return { blob: buildZip(files), count: records.length, palette };
+}
+
+// ---------------------------------------------------------------------
+// Minimal ZIP builder (STORE method, no compression)
+// ---------------------------------------------------------------------
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -590,7 +488,7 @@ function buildZip(files) {
     dv.setUint32(0, 0x04034b50, true);
     dv.setUint16(4, 20, true);
     dv.setUint16(6, 0, true);
-    dv.setUint16(8, 0, true);   // method 0 = store
+    dv.setUint16(8, 0, true);
     dv.setUint16(10, 0, true);
     dv.setUint16(12, 0, true);
     dv.setUint32(14, crc, true);
@@ -608,7 +506,7 @@ function buildZip(files) {
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
     cv.setUint16(8, 0, true);
-    cv.setUint16(10, 0, true);  // method 0 = store
+    cv.setUint16(10, 0, true);
     cv.setUint16(12, 0, true);
     cv.setUint16(14, 0, true);
     cv.setUint32(16, crc, true);
