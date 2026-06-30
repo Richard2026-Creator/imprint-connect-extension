@@ -27,6 +27,7 @@ const scanSelected = new Set(); // indices selected in the scan panel
 let brandLogo = '';             // user's custom logo as a data URL (optional)
 let customCategories = [];      // user-added categories (global)
 let customStyles = [];          // user-added styles (global)
+const selectedIds = new Set();  // library items selected for batch tagging
 
 const el = (id) => document.getElementById(id);
 const ui = {
@@ -41,14 +42,13 @@ const ui = {
   scanTitle: el('scanTitle'),
   scanCount: el('scanCount'),
   scanGrid: el('scanGrid'),
-  scanRoom: el('scanRoom'),
-  roomOptions: el('roomOptions'),
   scanAllBtn: el('scanAllBtn'),
   scanNoneBtn: el('scanNoneBtn'),
   addToLibraryBtn: el('addToLibraryBtn'),
   cancelScanBtn: el('cancelScanBtn'),
   filters: el('filters'),
   searchInput: el('searchInput'),
+  filterType: el('filterType'),
   filterRoom: el('filterRoom'),
   filterCategory: el('filterCategory'),
   filterStyle: el('filterStyle'),
@@ -57,6 +57,15 @@ const ui = {
   dedupeBtn: el('dedupeBtn'),
   namingMode: el('namingMode'),
   items: el('items'),
+  batchBar: el('batchBar'),
+  batchCount: el('batchCount'),
+  batchClear: el('batchClear'),
+  batchType: el('batchType'),
+  batchRoom: el('batchRoom'),
+  batchStyle: el('batchStyle'),
+  batchCategory: el('batchCategory'),
+  batchStatus: el('batchStatus'),
+  batchDelete: el('batchDelete'),
   modal: el('modal'),
   modalTitle: el('modalTitle'),
   modalBody: el('modalBody'),
@@ -206,6 +215,7 @@ async function selectProject(id) {
   currentProject = await getProject(id);
   if (!currentProject) return;
   ui.projectSelect.value = id;
+  selectedIds.clear();
   renderProjectMeta();
   hideScanPanel();
   await loadItems();
@@ -265,7 +275,6 @@ async function scanCurrentBoard() {
       scanSelected.clear();
       scanResults.forEach((_, i) => scanSelected.add(i));
       ui.scanTitle.textContent = `Found ${scanResults.length} pins on "${out.boardName || 'this board'}"`;
-      if (!ui.scanRoom.value) ui.scanRoom.value = '';
       renderScanGrid();
       ui.scanPanel.style.display = 'block';
       setStatus('', false);
@@ -303,15 +312,12 @@ async function addSelectedToLibrary() {
   if (!currentProject) return;
   const chosen = scanResults.filter((_, i) => scanSelected.has(i));
   if (!chosen.length) { setStatus('Select at least one pin to add.', true); return; }
-  const room = ui.scanRoom.value.trim();
-  if (room) await addRoom(currentProject.id, room);
-  const { added, skipped } = await addItems(currentProject.id, chosen, room);
+  const { added, skipped } = await addItems(currentProject.id, chosen, '');
   currentProject = await getProject(currentProject.id);
   hideScanPanel();
-  ui.scanRoom.value = '';
   await loadItems();
   const skipMsg = skipped ? ` (${skipped} already in library)` : '';
-  setStatus(`Added ${added} image${added === 1 ? '' : 's'}${room ? ` to ${esc(room)}` : ''}${skipMsg}.`, false);
+  setStatus(`Added ${added} image${added === 1 ? '' : 's'}${skipMsg}. Tag them below or export.`, false);
 }
 
 // ---------------------------------------------------------------------
@@ -379,8 +385,6 @@ async function addCustomValue(field, val) {
 
 function populateFilters() {
   const rooms = roomList();
-  ui.roomOptions.innerHTML = roomOptionList().map(r => `<option value="${esc(r)}">`).join('');
-
   const keep = {
     room: ui.filterRoom.value, category: ui.filterCategory.value,
     style: ui.filterStyle.value, status: ui.filterStatus.value
@@ -394,15 +398,24 @@ function populateFilters() {
   ui.filterCategory.value = keep.category || '';
   ui.filterStyle.value = keep.style || '';
   ui.filterStatus.value = keep.status || '';
+
+  // Batch-apply dropdowns (placeholder + values).
+  ui.batchRoom.innerHTML = `<option value="">Set room…</option>` + roomOptionList().map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  ui.batchStyle.innerHTML = `<option value="">Set style…</option>` + STYLES.concat(customStyles).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  ui.batchCategory.innerHTML = `<option value="">Set category…</option>` + CATEGORIES.concat(customCategories).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  ui.batchStatus.innerHTML = `<option value="">Set status…</option>` + STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 }
 
 function filteredItems() {
   const q = ui.searchInput.value.trim().toLowerCase();
+  const type = ui.filterType.value;
   const room = ui.filterRoom.value;
   const cat = ui.filterCategory.value;
   const sty = ui.filterStyle.value;
   const sta = ui.filterStatus.value;
   return items.filter(it => {
+    const kind = it.kind === 'product' ? 'product' : 'inspiration';
+    if (type && kind !== type) return false;
     const hay = ((it.caption || '') + ' ' + autoLabel(it.title) + ' ' + (it.title || '')).toLowerCase();
     if (q && !hay.includes(q)) return false;
     if (room === '__none__') { if (it.room) return false; }
@@ -414,11 +427,35 @@ function filteredItems() {
   });
 }
 
+// The relevant tag dropdowns for an item, based on its type:
+//   Inspiration -> Room + Style ;  Product (FF&E) -> Category + Status + Room
+function tagSelectsHtml(it) {
+  if (it.kind === 'product') {
+    return `
+      <select data-field="category">${fieldOptions('category', it.category)}</select>
+      <select data-field="status">${fieldOptions('status', it.status)}</select>
+      <select data-field="room">${fieldOptions('room', it.room)}</select>`;
+  }
+  return `
+    <select data-field="room">${fieldOptions('room', it.room)}</select>
+    <select data-field="style">${fieldOptions('style', it.style)}</select>`;
+}
+
+function renderBatchBar() {
+  const existing = new Set(items.map(i => i.id));
+  for (const id of Array.from(selectedIds)) if (!existing.has(id)) selectedIds.delete(id);
+  const n = selectedIds.size;
+  ui.batchBar.style.display = n ? 'block' : 'none';
+  if (n) ui.batchCount.textContent = `${n} selected`;
+}
+
 function renderItems() {
   const hasItems = items.length > 0;
   ui.filters.style.display = hasItems ? 'flex' : 'none';
 
   if (!hasItems) {
+    selectedIds.clear();
+    renderBatchBar();
     ui.items.innerHTML = `
       <div class="empty">
         <div class="editorial">Your library is empty.</div>
@@ -429,6 +466,7 @@ function renderItems() {
 
   const list = filteredItems();
   ui.itemCount.textContent = `${list.length} of ${items.length} shown`;
+  renderBatchBar();
 
   if (list.length === 0) {
     ui.items.innerHTML = `<div class="empty">No images match these filters.</div>`;
@@ -437,35 +475,55 @@ function renderItems() {
 
   ui.items.innerHTML = '';
   list.forEach(it => {
+    const kind = it.kind === 'product' ? 'product' : 'inspiration';
     const card = document.createElement('div');
-    card.className = 'item';
+    card.className = 'item' + (selectedIds.has(it.id) ? ' sel' : '');
     const captionVal = esc((it.caption || '').trim() || autoLabel(it.title));
     const srcLink = it.pinUrl
       ? `<a class="src" href="${esc(it.pinUrl)}" target="_blank" rel="noopener">Source &rarr;</a>`
       : `<span class="src" style="color:var(--muted-light)">No source</span>`;
     card.innerHTML = `
-      <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
+      <div class="thumb-wrap">
+        <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
+        <div class="pick" title="Select for batch tagging"></div>
+      </div>
       <div class="body">
         <div class="caption-label">Name</div>
         <input class="caption" type="text" value="${captionVal}" placeholder="Type a name..." spellcheck="false">
-        <div class="tagselects">
-          <select data-field="room">${fieldOptions('room', it.room)}</select>
-          <select data-field="category">${fieldOptions('category', it.category)}</select>
-          <select data-field="style">${fieldOptions('style', it.style)}</select>
-          <select data-field="status">${fieldOptions('status', it.status)}</select>
+        <div class="seg item-type">
+          <button type="button" data-kind="inspiration"${kind === 'inspiration' ? ' class="active"' : ''}>Inspiration</button>
+          <button type="button" data-kind="product"${kind === 'product' ? ' class="active"' : ''}>Product</button>
         </div>
+        <div class="tagselects">${tagSelectsHtml(it)}</div>
         <div class="row2">
           ${srcLink}
           <button class="del" title="Remove">&times;</button>
         </div>
       </div>`;
 
+    card.querySelector('.pick').addEventListener('click', () => {
+      if (selectedIds.has(it.id)) selectedIds.delete(it.id); else selectedIds.add(it.id);
+      card.classList.toggle('sel');
+      renderBatchBar();
+    });
+
     const cap = card.querySelector('.caption');
     cap.addEventListener('change', async () => {
       it.caption = cap.value.trim();
       await updateItem(it);
     });
-    card.querySelectorAll('select').forEach(sel => {
+
+    card.querySelectorAll('.item-type button').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const newKind = btn.dataset.kind;
+        if (newKind === kind) return;
+        it.kind = newKind;
+        await updateItem(it);
+        renderItems();
+      });
+    });
+
+    card.querySelectorAll('.tagselects select').forEach(sel => {
       sel.addEventListener('change', async () => {
         const field = sel.dataset.field;
         if (sel.value === ADD_NEW) {
@@ -484,9 +542,11 @@ function renderItems() {
         await updateItem(it);
       });
     });
+
     card.querySelector('.del').addEventListener('click', async () => {
       await deleteItem(it.id);
       items = items.filter(x => x.id !== it.id);
+      selectedIds.delete(it.id);
       renderProjectMeta();
       renderItems();
       ui.exportBtn.disabled = items.length === 0;
@@ -494,6 +554,35 @@ function renderItems() {
 
     ui.items.appendChild(card);
   });
+}
+
+// ---- Batch tagging ----
+async function applyToSelected(field, value) {
+  if (!selectedIds.size) return;
+  for (const it of items) {
+    if (selectedIds.has(it.id)) { it[field] = value; await updateItem(it); }
+  }
+  renderItems();
+}
+
+async function applyKindToSelected(kind) {
+  if (!selectedIds.size) return;
+  for (const it of items) {
+    if (selectedIds.has(it.id)) { it.kind = kind; await updateItem(it); }
+  }
+  renderItems();
+}
+
+async function deleteSelected() {
+  if (!selectedIds.size) return;
+  const ok = await showConfirm('Delete Images', `Remove ${selectedIds.size} selected image(s) from this project?`, 'Delete');
+  if (!ok) return;
+  for (const id of Array.from(selectedIds)) await deleteItem(id);
+  items = items.filter(x => !selectedIds.has(x.id));
+  selectedIds.clear();
+  renderProjectMeta();
+  renderItems();
+  ui.exportBtn.disabled = items.length === 0;
 }
 
 async function runDedupe() {
@@ -562,7 +651,16 @@ ui.brandFile.addEventListener('change', onBrandFile);
 ui.brandRemove.addEventListener('click', removeBrand);
 ui.brandClose.addEventListener('click', () => { ui.brandModal.style.display = 'none'; });
 ui.brandModal.addEventListener('click', (e) => { if (e.target === ui.brandModal) ui.brandModal.style.display = 'none'; });
-[ui.searchInput, ui.filterRoom, ui.filterCategory, ui.filterStyle, ui.filterStatus].forEach(elm => {
+ui.batchClear.addEventListener('click', () => { selectedIds.clear(); renderItems(); });
+ui.batchType.querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => applyKindToSelected(b.dataset.kind));
+});
+ui.batchRoom.addEventListener('change', () => { const v = ui.batchRoom.value; if (v) { applyToSelected('room', v); ui.batchRoom.value = ''; } });
+ui.batchStyle.addEventListener('change', () => { const v = ui.batchStyle.value; if (v) { applyToSelected('style', v); ui.batchStyle.value = ''; } });
+ui.batchCategory.addEventListener('change', () => { const v = ui.batchCategory.value; if (v) { applyToSelected('category', v); ui.batchCategory.value = ''; } });
+ui.batchStatus.addEventListener('change', () => { const v = ui.batchStatus.value; if (v) { applyToSelected('status', v); ui.batchStatus.value = ''; } });
+ui.batchDelete.addEventListener('click', deleteSelected);
+[ui.searchInput, ui.filterType, ui.filterRoom, ui.filterCategory, ui.filterStyle, ui.filterStatus].forEach(elm => {
   elm.addEventListener('input', renderItems);
   elm.addEventListener('change', renderItems);
 });

@@ -144,10 +144,41 @@
       display: flex; gap: 10px; background: var(--card); border: 1px solid var(--line);
       border-radius: 12px; padding: 10px;
     }
+    .item.sel { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+    .thumb-wrap { position: relative; width: 64px; height: 64px; min-width: 64px; }
     .item .thumb {
       width: 64px; height: 64px; min-width: 64px; object-fit: cover; border-radius: 8px;
       background: #eee; border: 1px solid var(--line);
     }
+    .pick {
+      position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(255,255,255,0.92); border: 1px solid var(--gold-soft); cursor: pointer;
+    }
+    .item.sel .pick { background: var(--gold); border-color: var(--gold); }
+    .item.sel .pick::after {
+      content: ''; position: absolute; left: 6px; top: 3px; width: 4px; height: 8px;
+      border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg);
+    }
+    /* Segmented Inspiration / Product control */
+    .seg { display: inline-flex; border: 1px solid var(--gold-soft); border-radius: 999px; overflow: hidden; }
+    .seg button {
+      border: 0; background: transparent; padding: 5px 11px; font-size: 9px; font-weight: 600;
+      letter-spacing: 1.2px; text-transform: uppercase; color: var(--charcoal-soft); cursor: pointer;
+      font-family: 'Inter', sans-serif;
+    }
+    .seg button.active { background: var(--charcoal); color: #F4F1EC; }
+    /* Batch tagging bar */
+    .batch-bar {
+      position: sticky; top: 0; z-index: 5; background: var(--card); border: 1px solid var(--gold-soft);
+      border-radius: 12px; padding: 11px 12px; margin-top: 12px; box-shadow: 0 4px 16px rgba(43,41,38,0.08);
+    }
+    .batch-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+    .batch-head span { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--charcoal); }
+    .batch-controls { display: flex; flex-direction: column; gap: 7px; }
+    .batch-controls .seg { align-self: flex-start; }
+    .batch-controls select { font-size: 11px; padding: 7px 8px; border-radius: 8px; }
+    .danger-btn { color: #A35A4A; border-color: #E2C4BC; margin-top: 2px; }
+    .danger-btn:hover { color: #fff; background: #A35A4A; border-color: #A35A4A; }
     .item .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
     .item .caption {
       width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 7px;
@@ -255,11 +286,6 @@
       </div>
     </div>
     <div class="scan-grid" id="scanGrid"></div>
-    <label class="field-label">Add to room</label>
-    <div class="room-row">
-      <input type="text" id="scanRoom" placeholder="e.g. Living Room (optional)" list="roomOptions">
-      <datalist id="roomOptions"></datalist>
-    </div>
     <div class="actions">
       <button class="btn btn-primary" id="addToLibraryBtn">Add Selected To Library</button>
       <button class="btn btn-outline" id="cancelScanBtn">Cancel</button>
@@ -278,6 +304,11 @@
       </select>
     </div>
     <input type="text" id="searchInput" placeholder="Search names...">
+    <select id="filterType">
+      <option value="">All types</option>
+      <option value="inspiration">Inspiration only</option>
+      <option value="product">Products (FF&amp;E) only</option>
+    </select>
     <div class="filter-grid">
       <select id="filterRoom"></select>
       <select id="filterCategory"></select>
@@ -287,6 +318,25 @@
     <div class="filter-actions">
       <span class="count-line" id="itemCount"></span>
       <button class="link-btn" id="dedupeBtn">Remove duplicates</button>
+    </div>
+  </div>
+
+  <!-- Batch tagging bar (appears when images are selected) -->
+  <div class="batch-bar" id="batchBar" style="display:none;">
+    <div class="batch-head">
+      <span id="batchCount"></span>
+      <button class="link-btn" id="batchClear">Clear</button>
+    </div>
+    <div class="batch-controls">
+      <div class="seg" id="batchType">
+        <button type="button" data-kind="inspiration">Inspiration</button>
+        <button type="button" data-kind="product">Product</button>
+      </div>
+      <select id="batchRoom"></select>
+      <select id="batchStyle"></select>
+      <select id="batchCategory"></select>
+      <select id="batchStatus"></select>
+      <button class="btn btn-outline danger-btn" id="batchDelete">Delete selected</button>
     </div>
   </div>
 

@@ -269,13 +269,14 @@ function csvCell(v) {
 }
 
 function buildCsv(records) {
-  const header = ['index', 'filename', 'title', 'room', 'category', 'style', 'status', 'pin_url', 'image_url', 'colors'];
+  const header = ['index', 'filename', 'title', 'type', 'room', 'category', 'style', 'status', 'pin_url', 'image_url', 'colors'];
   const rows = [header.map(csvCell).join(',')];
   for (const r of records) {
     rows.push([
       csvCell(r.index),
       csvCell(r.filename),
       csvCell(r.title),
+      csvCell(r.kind === 'product' ? 'Product' : 'Inspiration'),
       csvCell(r.room),
       csvCell(r.category),
       csvCell(r.style),
@@ -299,6 +300,7 @@ function buildJson(records, boardPalette, exportedAt, board) {
       index: r.index,
       filename: r.filename,
       title: r.title,
+      type: r.kind === 'product' ? 'Product' : 'Inspiration',
       room: r.room,
       category: r.category,
       style: r.style,
@@ -486,6 +488,7 @@ async function buildLibraryPack(items, board, options) {
       index: seq,
       filename: path,
       title: displayTitle,
+      kind: it.kind || 'inspiration',
       room: it.room || '',
       category: it.category || '',
       style: it.style || '',

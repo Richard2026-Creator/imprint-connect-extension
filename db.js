@@ -140,6 +140,7 @@ async function addItems(projectId, pins, room) {
       pinUrl: p.pinUrl || '',
       title: p.title || '',
       caption: '',
+      kind: 'inspiration',
       category: '',
       style: '',
       status: '',
