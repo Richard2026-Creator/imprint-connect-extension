@@ -160,13 +160,16 @@
       border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg);
     }
     /* Segmented Inspiration / Product control */
-    .seg { display: inline-flex; border: 1px solid var(--gold-soft); border-radius: 999px; overflow: hidden; }
+    .seg { display: flex; width: 100%; border: 1px solid var(--gold-soft); border-radius: 999px; overflow: hidden; }
     .seg button {
-      border: 0; background: transparent; padding: 5px 11px; font-size: 9px; font-weight: 600;
-      letter-spacing: 1.2px; text-transform: uppercase; color: var(--charcoal-soft); cursor: pointer;
-      font-family: 'Inter', sans-serif;
+      flex: 1; text-align: center; border: 0; background: transparent; padding: 7px 8px; font-size: 9px;
+      font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--charcoal-soft);
+      cursor: pointer; font-family: 'Inter', sans-serif;
     }
+    .seg button:first-child { border-right: 1px solid var(--line); }
     .seg button.active { background: var(--charcoal); color: #F4F1EC; }
+    /* Collapsible filter fields */
+    .filter-fields { display: flex; flex-direction: column; gap: 8px; }
     /* Batch tagging bar */
     .batch-bar {
       position: sticky; top: 0; z-index: 5; background: var(--card); border: 1px solid var(--gold-soft);
@@ -175,7 +178,7 @@
     .batch-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
     .batch-head span { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--charcoal); }
     .batch-controls { display: flex; flex-direction: column; gap: 7px; }
-    .batch-controls .seg { align-self: flex-start; }
+    .batch-controls .seg { align-self: stretch; }
     .batch-controls select { font-size: 11px; padding: 7px 8px; border-radius: 8px; }
     .danger-btn { color: #A35A4A; border-color: #E2C4BC; margin-top: 2px; }
     .danger-btn:hover { color: #fff; background: #A35A4A; border-color: #A35A4A; }
@@ -304,20 +307,25 @@
       </select>
     </div>
     <input type="text" id="searchInput" placeholder="Search names...">
-    <select id="filterType">
-      <option value="">All types</option>
-      <option value="inspiration">Inspiration only</option>
-      <option value="product">Products (FF&amp;E) only</option>
-    </select>
-    <div class="filter-grid">
-      <select id="filterRoom"></select>
-      <select id="filterCategory"></select>
-      <select id="filterStyle"></select>
-      <select id="filterStatus"></select>
-    </div>
     <div class="filter-actions">
       <span class="count-line" id="itemCount"></span>
-      <button class="link-btn" id="dedupeBtn">Remove duplicates</button>
+      <div>
+        <button class="link-btn" id="filterToggle">Filters</button>
+        <button class="link-btn" id="dedupeBtn">Remove duplicates</button>
+      </div>
+    </div>
+    <div class="filter-fields" id="filterFields" style="display:none;">
+      <select id="filterType">
+        <option value="">All types</option>
+        <option value="inspiration">Inspiration only</option>
+        <option value="product">Products (FF&amp;E) only</option>
+      </select>
+      <div class="filter-grid">
+        <select id="filterRoom"></select>
+        <select id="filterCategory"></select>
+        <select id="filterStyle"></select>
+        <select id="filterStatus"></select>
+      </div>
     </div>
   </div>
 

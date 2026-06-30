@@ -55,6 +55,8 @@ const ui = {
   filterStatus: el('filterStatus'),
   itemCount: el('itemCount'),
   dedupeBtn: el('dedupeBtn'),
+  filterToggle: el('filterToggle'),
+  filterFields: el('filterFields'),
   namingMode: el('namingMode'),
   items: el('items'),
   batchBar: el('batchBar'),
@@ -358,7 +360,7 @@ function fieldOptions(field, selected) {
   else values = STATUSES;
   if (selected && !values.includes(selected)) values = values.concat(selected);
 
-  const blankLabel = field.charAt(0).toUpperCase() + field.slice(1);
+  const blankLabel = field === 'room' ? 'No room specified' : field.charAt(0).toUpperCase() + field.slice(1);
   let html = `<option value="">${esc(blankLabel)}</option>`;
   html += values.map(v => `<option value="${esc(v)}"${v === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
   if (field !== 'status') html += `<option value="${ADD_NEW}">+ Add ${field}…</option>`;
@@ -643,6 +645,11 @@ ui.scanNoneBtn.addEventListener('click', () => { scanSelected.clear(); renderSca
 ui.addToLibraryBtn.addEventListener('click', addSelectedToLibrary);
 ui.cancelScanBtn.addEventListener('click', () => { hideScanPanel(); setStatus('', false); });
 ui.dedupeBtn.addEventListener('click', runDedupe);
+ui.filterToggle.addEventListener('click', () => {
+  const open = ui.filterFields.style.display !== 'none';
+  ui.filterFields.style.display = open ? 'none' : 'flex';
+  ui.filterToggle.textContent = open ? 'Filters' : 'Hide filters';
+});
 ui.namingMode.addEventListener('change', () => {
   chrome.storage.local.set({ namingMode: ui.namingMode.value });
 });
