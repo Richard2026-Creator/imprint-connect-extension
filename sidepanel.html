@@ -145,6 +145,13 @@
       border-radius: 12px; padding: 10px;
     }
     .item.sel { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+    .item.bulk { cursor: pointer; align-items: center; }
+    .item.bulk .body { gap: 3px; }
+    .bulk-name {
+      font-size: 12px; font-weight: 500; color: var(--charcoal); line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .bulk-tags { font-size: 10px; color: var(--muted); }
     .thumb-wrap { position: relative; width: 64px; height: 64px; min-width: 64px; }
     .item .thumb {
       width: 64px; height: 64px; min-width: 64px; object-fit: cover; border-radius: 8px;
@@ -310,6 +317,7 @@
     <div class="filter-actions">
       <span class="count-line" id="itemCount"></span>
       <div>
+        <button class="link-btn" id="bulkToggle">Bulk tag</button>
         <button class="link-btn" id="filterToggle">Filters</button>
         <button class="link-btn" id="dedupeBtn">Remove duplicates</button>
       </div>
@@ -329,13 +337,17 @@
     </div>
   </div>
 
-  <!-- Batch tagging bar (appears when images are selected) -->
+  <!-- Batch tagging bar (appears in Bulk mode) -->
   <div class="batch-bar" id="batchBar" style="display:none;">
     <div class="batch-head">
       <span id="batchCount"></span>
-      <button class="link-btn" id="batchClear">Clear</button>
+      <div>
+        <button class="link-btn" id="batchSelectAll">Select all</button>
+        <button class="link-btn" id="batchClear">Clear</button>
+        <button class="link-btn" id="batchDone">Done</button>
+      </div>
     </div>
-    <div class="batch-controls">
+    <div class="batch-controls" id="batchControls">
       <div class="seg" id="batchType">
         <button type="button" data-kind="inspiration">Inspiration</button>
         <button type="button" data-kind="product">Product</button>

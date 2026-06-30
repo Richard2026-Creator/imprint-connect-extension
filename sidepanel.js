@@ -28,6 +28,7 @@ let brandLogo = '';             // user's custom logo as a data URL (optional)
 let customCategories = [];      // user-added categories (global)
 let customStyles = [];          // user-added styles (global)
 const selectedIds = new Set();  // library items selected for batch tagging
+let bulkMode = false;           // true = bulk-tag mode (select + batch bar)
 
 const el = (id) => document.getElementById(id);
 const ui = {
@@ -57,11 +58,15 @@ const ui = {
   dedupeBtn: el('dedupeBtn'),
   filterToggle: el('filterToggle'),
   filterFields: el('filterFields'),
+  bulkToggle: el('bulkToggle'),
   namingMode: el('namingMode'),
   items: el('items'),
   batchBar: el('batchBar'),
   batchCount: el('batchCount'),
+  batchControls: el('batchControls'),
+  batchSelectAll: el('batchSelectAll'),
   batchClear: el('batchClear'),
+  batchDone: el('batchDone'),
   batchType: el('batchType'),
   batchRoom: el('batchRoom'),
   batchStyle: el('batchStyle'),
@@ -446,16 +451,21 @@ function tagSelectsHtml(it) {
 function renderBatchBar() {
   const existing = new Set(items.map(i => i.id));
   for (const id of Array.from(selectedIds)) if (!existing.has(id)) selectedIds.delete(id);
+  if (!bulkMode) { ui.batchBar.style.display = 'none'; return; }
+  ui.batchBar.style.display = 'block';
   const n = selectedIds.size;
-  ui.batchBar.style.display = n ? 'block' : 'none';
-  if (n) ui.batchCount.textContent = `${n} selected`;
+  ui.batchCount.textContent = n ? `${n} selected` : 'Tap images to select';
+  ui.batchControls.style.display = n ? 'flex' : 'none';
 }
 
 function renderItems() {
   const hasItems = items.length > 0;
   ui.filters.style.display = hasItems ? 'flex' : 'none';
+  ui.bulkToggle.style.display = hasItems ? '' : 'none';
 
   if (!hasItems) {
+    bulkMode = false;
+    ui.bulkToggle.textContent = 'Bulk tag';
     selectedIds.clear();
     renderBatchBar();
     ui.items.innerHTML = `
@@ -476,86 +486,111 @@ function renderItems() {
   }
 
   ui.items.innerHTML = '';
-  list.forEach(it => {
-    const kind = it.kind === 'product' ? 'product' : 'inspiration';
-    const card = document.createElement('div');
-    card.className = 'item' + (selectedIds.has(it.id) ? ' sel' : '');
-    const captionVal = esc((it.caption || '').trim() || autoLabel(it.title));
-    const srcLink = it.pinUrl
-      ? `<a class="src" href="${esc(it.pinUrl)}" target="_blank" rel="noopener">Source &rarr;</a>`
-      : `<span class="src" style="color:var(--muted-light)">No source</span>`;
-    card.innerHTML = `
-      <div class="thumb-wrap">
-        <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
-        <div class="pick" title="Select for batch tagging"></div>
+  list.forEach(it => ui.items.appendChild(bulkMode ? bulkCard(it) : fullCard(it)));
+}
+
+function displayName(it) {
+  return (it.caption || '').trim() || autoLabel(it.title);
+}
+
+function tagsText(it) {
+  const kind = it.kind === 'product' ? 'Product' : 'Inspiration';
+  const bits = it.kind === 'product' ? [it.category, it.status, it.room] : [it.room, it.style];
+  return [kind].concat(bits.filter(Boolean)).join('  ·  ');
+}
+
+// Compact, fully-clickable card used in Bulk mode.
+function bulkCard(it) {
+  const card = document.createElement('div');
+  card.className = 'item bulk' + (selectedIds.has(it.id) ? ' sel' : '');
+  card.innerHTML = `
+    <div class="thumb-wrap">
+      <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
+      <div class="pick"></div>
+    </div>
+    <div class="body">
+      <div class="bulk-name">${esc(displayName(it))}</div>
+      <div class="bulk-tags">${esc(tagsText(it))}</div>
+    </div>`;
+  card.addEventListener('click', () => {
+    if (selectedIds.has(it.id)) selectedIds.delete(it.id); else selectedIds.add(it.id);
+    card.classList.toggle('sel');
+    renderBatchBar();
+  });
+  return card;
+}
+
+// Full editing card used in Individual mode (no checkbox; edit in place).
+function fullCard(it) {
+  const kind = it.kind === 'product' ? 'product' : 'inspiration';
+  const card = document.createElement('div');
+  card.className = 'item';
+  const captionVal = esc((it.caption || '').trim() || autoLabel(it.title));
+  const srcLink = it.pinUrl
+    ? `<a class="src" href="${esc(it.pinUrl)}" target="_blank" rel="noopener">Source &rarr;</a>`
+    : `<span class="src" style="color:var(--muted-light)">No source</span>`;
+  card.innerHTML = `
+    <img class="thumb" src="${esc(it.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">
+    <div class="body">
+      <div class="caption-label">Name</div>
+      <input class="caption" type="text" value="${captionVal}" placeholder="Type a name..." spellcheck="false">
+      <div class="seg item-type">
+        <button type="button" data-kind="inspiration"${kind === 'inspiration' ? ' class="active"' : ''}>Inspiration</button>
+        <button type="button" data-kind="product"${kind === 'product' ? ' class="active"' : ''}>Product</button>
       </div>
-      <div class="body">
-        <div class="caption-label">Name</div>
-        <input class="caption" type="text" value="${captionVal}" placeholder="Type a name..." spellcheck="false">
-        <div class="seg item-type">
-          <button type="button" data-kind="inspiration"${kind === 'inspiration' ? ' class="active"' : ''}>Inspiration</button>
-          <button type="button" data-kind="product"${kind === 'product' ? ' class="active"' : ''}>Product</button>
-        </div>
-        <div class="tagselects">${tagSelectsHtml(it)}</div>
-        <div class="row2">
-          ${srcLink}
-          <button class="del" title="Remove">&times;</button>
-        </div>
-      </div>`;
+      <div class="tagselects">${tagSelectsHtml(it)}</div>
+      <div class="row2">
+        ${srcLink}
+        <button class="del" title="Remove">&times;</button>
+      </div>
+    </div>`;
 
-    card.querySelector('.pick').addEventListener('click', () => {
-      if (selectedIds.has(it.id)) selectedIds.delete(it.id); else selectedIds.add(it.id);
-      card.classList.toggle('sel');
-      renderBatchBar();
+  const cap = card.querySelector('.caption');
+  cap.addEventListener('change', async () => {
+    it.caption = cap.value.trim();
+    await updateItem(it);
+  });
+
+  card.querySelectorAll('.item-type button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newKind = btn.dataset.kind;
+      if (newKind === kind) return;
+      it.kind = newKind;
+      await updateItem(it);
+      renderItems();
     });
+  });
 
-    const cap = card.querySelector('.caption');
-    cap.addEventListener('change', async () => {
-      it.caption = cap.value.trim();
+  card.querySelectorAll('.tagselects select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const field = sel.dataset.field;
+      if (sel.value === ADD_NEW) {
+        const labels = { room: 'Add Room', category: 'Add Category', style: 'Add Style' };
+        const name = await showPrompt(labels[field] || 'Add', 'Type a name', 'Add');
+        if (!name || !name.trim()) { sel.value = it[field] || ''; return; }
+        const val = name.trim();
+        await addCustomValue(field, val);
+        it[field] = val;
+        await updateItem(it);
+        populateFilters();
+        renderItems();
+        return;
+      }
+      it[field] = sel.value;
       await updateItem(it);
     });
-
-    card.querySelectorAll('.item-type button').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const newKind = btn.dataset.kind;
-        if (newKind === kind) return;
-        it.kind = newKind;
-        await updateItem(it);
-        renderItems();
-      });
-    });
-
-    card.querySelectorAll('.tagselects select').forEach(sel => {
-      sel.addEventListener('change', async () => {
-        const field = sel.dataset.field;
-        if (sel.value === ADD_NEW) {
-          const labels = { room: 'Add Room', category: 'Add Category', style: 'Add Style' };
-          const name = await showPrompt(labels[field] || 'Add', 'Type a name', 'Add');
-          if (!name || !name.trim()) { sel.value = it[field] || ''; return; }
-          const val = name.trim();
-          await addCustomValue(field, val);
-          it[field] = val;
-          await updateItem(it);
-          populateFilters();
-          renderItems();
-          return;
-        }
-        it[field] = sel.value;
-        await updateItem(it);
-      });
-    });
-
-    card.querySelector('.del').addEventListener('click', async () => {
-      await deleteItem(it.id);
-      items = items.filter(x => x.id !== it.id);
-      selectedIds.delete(it.id);
-      renderProjectMeta();
-      renderItems();
-      ui.exportBtn.disabled = items.length === 0;
-    });
-
-    ui.items.appendChild(card);
   });
+
+  card.querySelector('.del').addEventListener('click', async () => {
+    await deleteItem(it.id);
+    items = items.filter(x => x.id !== it.id);
+    selectedIds.delete(it.id);
+    renderProjectMeta();
+    renderItems();
+    ui.exportBtn.disabled = items.length === 0;
+  });
+
+  return card;
 }
 
 // ---- Batch tagging ----
@@ -585,6 +620,13 @@ async function deleteSelected() {
   renderProjectMeta();
   renderItems();
   ui.exportBtn.disabled = items.length === 0;
+}
+
+function setBulkMode(on) {
+  bulkMode = on;
+  selectedIds.clear();
+  ui.bulkToggle.textContent = on ? 'Done' : 'Bulk tag';
+  renderItems();
 }
 
 async function runDedupe() {
@@ -659,6 +701,9 @@ ui.brandRemove.addEventListener('click', removeBrand);
 ui.brandClose.addEventListener('click', () => { ui.brandModal.style.display = 'none'; });
 ui.brandModal.addEventListener('click', (e) => { if (e.target === ui.brandModal) ui.brandModal.style.display = 'none'; });
 ui.batchClear.addEventListener('click', () => { selectedIds.clear(); renderItems(); });
+ui.bulkToggle.addEventListener('click', () => setBulkMode(!bulkMode));
+ui.batchDone.addEventListener('click', () => setBulkMode(false));
+ui.batchSelectAll.addEventListener('click', () => { filteredItems().forEach(it => selectedIds.add(it.id)); renderItems(); });
 ui.batchType.querySelectorAll('button').forEach(b => {
   b.addEventListener('click', () => applyKindToSelected(b.dataset.kind));
 });
