@@ -166,6 +166,46 @@ async function deleteItem(id) {
   return true;
 }
 
+// ----- Backup / Restore (whole library) -----
+
+// Every project and every item across all projects, for a full backup.
+async function exportAllData() {
+  const projects = await listProjects();
+  const items = [];
+  for (const p of projects) {
+    items.push(...(await listItems(p.id)));
+  }
+  return { projects, items };
+}
+
+// Replaces everything currently stored with the contents of a previous
+// backup (see exportAllData). Destructive — the caller should confirm
+// with the user first. Returns how many projects/items were restored.
+async function importAllData(data) {
+  const projects = Array.isArray(data.projects) ? data.projects : [];
+  const items = Array.isArray(data.items) ? data.items : [];
+
+  const clearTx = await tx(['projects', 'items'], 'readwrite');
+  clearTx.objectStore('projects').clear();
+  clearTx.objectStore('items').clear();
+  await new Promise((resolve, reject) => {
+    clearTx.oncomplete = () => resolve();
+    clearTx.onerror = () => reject(clearTx.error);
+  });
+
+  const writeTx = await tx(['projects', 'items'], 'readwrite');
+  const projStore = writeTx.objectStore('projects');
+  const itemStore = writeTx.objectStore('items');
+  projects.forEach(p => projStore.put(p));
+  items.forEach(it => itemStore.put(it));
+  await new Promise((resolve, reject) => {
+    writeTx.oncomplete = () => resolve();
+    writeTx.onerror = () => reject(writeTx.error);
+  });
+
+  return { projects: projects.length, items: items.length };
+}
+
 // Remove duplicate items within a project (same imageUrl), keeping the
 // earliest-added one. Returns the number removed.
 async function dedupeProject(projectId) {

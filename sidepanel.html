@@ -390,9 +390,18 @@
         <label class="field-label" style="margin:0 0 6px;">Logo for client PDFs</label>
         <input type="file" id="brandFile" accept="image/png,image/jpeg,image/webp,image/svg+xml">
         <div class="brand-hint">Replaces the IMPRINT mark on your exported source sheet. Stored locally on this device. Use a PNG with a transparent background for best results.</div>
+
+        <hr style="margin:18px 0;">
+        <label class="field-label" style="margin:0 0 6px;">Library Backup</label>
+        <div class="brand-hint" style="margin-top:0;">Everything is stored only in this browser. Save a backup file regularly, or restore one if you switch computers or reinstall the extension.</div>
+        <div class="actions" style="margin-top:10px;">
+          <button class="btn btn-outline" id="backupBtn" type="button">Backup Library</button>
+          <button class="btn btn-outline" id="restoreBtn" type="button">Restore Library</button>
+        </div>
+        <input type="file" id="restoreFile" accept="application/json" style="display:none;">
       </div>
       <div class="modal-actions">
-        <button class="btn btn-outline" id="brandRemove">Remove</button>
+        <button class="btn btn-outline" id="brandRemove">Remove Logo</button>
         <button class="btn btn-primary" id="brandClose">Done</button>
       </div>
     </div>

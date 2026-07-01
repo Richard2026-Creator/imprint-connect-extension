@@ -84,7 +84,10 @@ const ui = {
   brandPreview: el('brandPreview'),
   brandFile: el('brandFile'),
   brandRemove: el('brandRemove'),
-  brandClose: el('brandClose')
+  brandClose: el('brandClose'),
+  backupBtn: el('backupBtn'),
+  restoreBtn: el('restoreBtn'),
+  restoreFile: el('restoreFile')
 };
 
 function setStatus(msg, isError, spinner) {
@@ -260,21 +263,43 @@ async function removeProject() {
 // ---------------------------------------------------------------------
 // Scanning a board
 // ---------------------------------------------------------------------
+let isScanning = false;
+let scanCancelled = false;
+
 async function scanCurrentBoard() {
+  if (isScanning) {
+    // Scan button doubles as a Stop button while a scan is running.
+    scanCancelled = true;
+    setStatus('Stopping scan...', false, true);
+    return;
+  }
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !/pinterest\.com\//.test(tab.url || '')) {
     setStatus('Open a Pinterest board in the active tab, then click Scan.', true);
     return;
   }
-  ui.scanBtn.disabled = true;
-  setStatus('Scanning and scrolling the board... this can take 20-60 seconds.', false, true);
+
+  isScanning = true;
+  scanCancelled = false;
+  ui.scanBtn.textContent = 'Stop Scanning';
+  setStatus('Scanning and scrolling the board...', false, true);
+
+  let out = { pins: [], boardName: '', boardUrl: '' };
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: scrollAndCollect,
-      args: [1000]
-    });
-    const out = (results && results[0] && results[0].result) ? results[0].result : {};
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scanInit });
+    for (let i = 0; i < 500; i++) {
+      if (scanCancelled) break;
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: scanStep,
+        args: [1000]
+      });
+      out = (results && results[0] && results[0].result) || out;
+      setStatus(`Found ${(out.pins || []).length} pin${(out.pins || []).length === 1 ? '' : 's'} so far... click "Stop Scanning" to finish early.`, false, true);
+      if (out.done) break;
+    }
+
     scanResults = out.pins || [];
     if (scanResults.length === 0) {
       setStatus('No pins found. Make sure a board grid is visible.', true);
@@ -284,12 +309,14 @@ async function scanCurrentBoard() {
       ui.scanTitle.textContent = `Found ${scanResults.length} pins on "${out.boardName || 'this board'}"`;
       renderScanGrid();
       ui.scanPanel.style.display = 'block';
-      setStatus('', false);
+      setStatus(scanCancelled ? 'Scan stopped early — showing what was found so far.' : '', false);
     }
   } catch (e) {
     setStatus('Scan failed: ' + e.message, true);
   } finally {
-    ui.scanBtn.disabled = false;
+    isScanning = false;
+    scanCancelled = false;
+    ui.scanBtn.textContent = 'Scan Current Board';
   }
 }
 
@@ -584,6 +611,8 @@ function fullCard(it) {
   });
 
   card.querySelector('.del').addEventListener('click', async () => {
+    const ok = await showConfirm('Remove Image', `Remove "${displayName(it)}" from this project? This cannot be undone.`, 'Remove');
+    if (!ok) return;
     await deleteItem(it.id);
     items = items.filter(x => x.id !== it.id);
     selectedIds.delete(it.id);
@@ -635,6 +664,72 @@ async function runDedupe() {
   const removed = await dedupeProject(currentProject.id);
   await loadItems();
   setStatus(removed ? `Removed ${removed} duplicate${removed === 1 ? '' : 's'}.` : 'No duplicates found.', false);
+}
+
+// ---------------------------------------------------------------------
+// Whole-library backup / restore (everything lives only in this browser,
+// so this is the only way to move it or recover from a wipe/reinstall).
+// ---------------------------------------------------------------------
+async function backupLibrary() {
+  const { projects, items } = await exportAllData();
+  const payload = {
+    app: 'imprint-connect',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    projects,
+    items,
+    settings: { customCategories, customStyles, namingMode: ui.namingMode.value, brandLogo }
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const filename = `imprint-connect-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  chrome.downloads.download({ url, filename, saveAs: false }, () => {
+    setStatus('Library backed up to Downloads.', false);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  });
+}
+
+async function restoreLibrary() {
+  const file = ui.restoreFile.files && ui.restoreFile.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!Array.isArray(data.projects) || !Array.isArray(data.items)) {
+      setStatus("That file doesn't look like an IMPRINT Connect backup.", true);
+      return;
+    }
+    const ok = await showConfirm(
+      'Restore Library',
+      `This replaces everything currently saved in this browser with the ${data.projects.length} project(s) and ${data.items.length} image(s) from this backup. This cannot be undone.`,
+      'Restore'
+    );
+    if (!ok) return;
+
+    await importAllData(data);
+
+    const settings = data.settings || {};
+    customCategories = settings.customCategories || [];
+    customStyles = settings.customStyles || [];
+    brandLogo = settings.brandLogo || '';
+    await chrome.storage.local.set({
+      customCategories, customStyles, brandLogo,
+      namingMode: settings.namingMode || 'numbered'
+    });
+    ui.namingMode.value = settings.namingMode || 'numbered';
+    applyBrand();
+
+    let projects = await listProjects();
+    if (projects.length === 0) projects = [await createProject('My First Project', '')];
+    renderProjectSelect(projects);
+    await selectProject(projects[0].id);
+    ui.brandModal.style.display = 'none';
+    setStatus(`Restored ${data.projects.length} project(s), ${data.items.length} image(s).`, false);
+  } catch (e) {
+    setStatus('Restore failed: ' + e.message, true);
+  } finally {
+    ui.restoreFile.value = '';
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -700,6 +795,9 @@ ui.namingMode.addEventListener('change', () => {
 ui.settingsBtn.addEventListener('click', openBrand);
 ui.brandFile.addEventListener('change', onBrandFile);
 ui.brandRemove.addEventListener('click', removeBrand);
+ui.backupBtn.addEventListener('click', backupLibrary);
+ui.restoreBtn.addEventListener('click', () => ui.restoreFile.click());
+ui.restoreFile.addEventListener('change', restoreLibrary);
 ui.brandClose.addEventListener('click', () => { ui.brandModal.style.display = 'none'; });
 ui.brandModal.addEventListener('click', (e) => { if (e.target === ui.brandModal) ui.brandModal.style.display = 'none'; });
 ui.batchClear.addEventListener('click', () => { selectedIds.clear(); renderItems(); });

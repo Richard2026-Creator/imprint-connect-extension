@@ -9,12 +9,21 @@
 // =====================================================================
 
 // ---------------------------------------------------------------------
-// Injected into the Pinterest tab. Scrolls the board and accumulates pin
-// image URLs + provenance, ignoring the "More ideas" suggestions section.
-// Must be fully self-contained (it is serialized by chrome.scripting).
+// Injected into the Pinterest tab, one round per call, so the side panel
+// can show a live pin count and let the user cancel between rounds (a
+// single blocking call couldn't be interrupted or report progress).
+// State is kept on `window` between calls since each injected function
+// runs in a fresh, self-contained scope. Ignores the "More ideas"
+// suggestions section. Must be fully self-contained (serialized by
+// chrome.scripting).
 // ---------------------------------------------------------------------
-async function scrollAndCollect(maxPins) {
-  const collected = new Map();
+function scanInit() {
+  window.__imprintScan = { collected: new Map(), stable: 0, calls: 0 };
+  return true;
+}
+
+async function scanStep(maxPins) {
+  const state = window.__imprintScan || (window.__imprintScan = { collected: new Map(), stable: 0, calls: 0 });
 
   function getBoardName() {
     const h = document.querySelector('h1');
@@ -63,8 +72,8 @@ async function scrollAndCollect(maxPins) {
         try { pinUrl = new URL(href, location.origin).href; } catch (e) { pinUrl = href; }
       }
 
-      if (!collected.has(originalUrl)) {
-        collected.set(originalUrl, {
+      if (!state.collected.has(originalUrl)) {
+        state.collected.set(originalUrl, {
           imageUrl: originalUrl,
           thumbnailUrl: src,
           title: (img.alt || '').trim(),
@@ -74,28 +83,30 @@ async function scrollAndCollect(maxPins) {
     });
   }
 
-  harvest(getBoundaryY());
-  let stable = 0;
-  for (let i = 0; i < 500; i++) {
-    const before = collected.size;
-    if (before >= maxPins) break;
-    const boundaryY = getBoundaryY();
-    if (boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY) break;
+  const before = state.collected.size;
+  let boundaryY = getBoundaryY();
+  const atBoundaryAlready = boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY;
+
+  if (state.calls === 0) {
+    // First call: harvest whatever is already on screen, no scroll yet.
+    harvest(boundaryY);
+  } else if (before < maxPins && !atBoundaryAlready) {
     window.scrollBy(0, window.innerHeight * 1.5);
     await new Promise(r => setTimeout(r, 1200));
-    harvest(getBoundaryY());
-    if (collected.size === before) {
-      stable++;
-      if (stable >= 6) break;
-    } else {
-      stable = 0;
-    }
+    boundaryY = getBoundaryY();
+    harvest(boundaryY);
   }
+  state.calls++;
+
+  if (state.collected.size === before) state.stable++; else state.stable = 0;
+  const reachedBoundary = boundaryY !== Infinity && (window.scrollY + window.innerHeight) >= boundaryY;
+  const done = state.collected.size >= maxPins || reachedBoundary || state.stable >= 6;
 
   return {
     boardName: getBoardName(),
     boardUrl: location.href,
-    pins: Array.from(collected.values()).slice(0, maxPins)
+    pins: Array.from(state.collected.values()).slice(0, maxPins),
+    done
   };
 }
 
