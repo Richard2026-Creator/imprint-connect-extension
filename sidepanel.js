@@ -434,8 +434,9 @@ function filteredItems() {
   });
 }
 
-// The relevant tag dropdowns for an item, based on its type:
-//   Inspiration -> Room + Style ;  Product (FF&E) -> Category + Status + Room
+// The relevant tag dropdowns for an item, based on its type. Status applies
+// to both types, so it's always shown regardless of Inspiration/Product:
+//   Inspiration -> Room + Style + Status ;  Product (FF&E) -> Category + Status + Room
 function tagSelectsHtml(it) {
   if (it.kind === 'product') {
     return `
@@ -445,7 +446,8 @@ function tagSelectsHtml(it) {
   }
   return `
     <select data-field="room">${fieldOptions('room', it.room)}</select>
-    <select data-field="style">${fieldOptions('style', it.style)}</select>`;
+    <select data-field="style">${fieldOptions('style', it.style)}</select>
+    <select data-field="status">${fieldOptions('status', it.status)}</select>`;
 }
 
 function renderBatchBar() {
