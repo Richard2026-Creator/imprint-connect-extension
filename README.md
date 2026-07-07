@@ -11,7 +11,7 @@ It runs entirely in your browser using your existing Pinterest session — no se
 - **Scan a board** you're viewing, pick the pins you want, and add them to a project.
 - **Tag** every image by room, category, style, and status (proposed/approved/ordered).
 - **Search, filter, and de-duplicate** your library.
-- **Export a Library Pack** (ZIP): images in an `images/` folder + `manifest.csv` + `manifest.json` + a branded, printable `source-sheet.html` with source links and color palette.
+- **Export a Library Pack** (ZIP): images in an `images/` folder + `manifest.csv` + a branded `source-sheet.pdf` with source links and color palette.
 - **Local color palette extraction** per image and per project — no API, no cost.
 - Premium, editorial IMPRINT-branded interface.
 
@@ -37,9 +37,8 @@ It runs entirely in your browser using your existing Pinterest session — no se
 The ZIP is named after the project (`imprint-<project-name>.zip`) and contains:
 
 ```
-source-sheet.html   Branded, printable source & credits sheet (open in a browser, "Save as PDF")
+source-sheet.pdf    Branded source & credits sheet — source links and color palette, ready to open or print
 manifest.csv        Spreadsheet of every image: title, room/category/style/status, source link, colors
-manifest.json       Same data as structured JSON, plus the project color palette
 images/             The images, named sequentially (0001.jpg, 0002.png, ...)
 ```
 
@@ -51,8 +50,9 @@ images/             The images, named sequentially (0001.jpg, 0002.png, ...)
 | `background.js` | Service worker; opens the side panel on icon click |
 | `sidepanel.html` | Side panel interface and styling |
 | `sidepanel.js` | Library UI logic (projects, scan-to-add, tagging, filters, export) |
-| `core.js` | Reusable logic: board scanning, color extraction, ZIP/manifest/source-sheet builders |
+| `core.js` | Reusable logic: board scanning, color extraction, ZIP/manifest/PDF source-sheet builders |
 | `db.js` | Local IndexedDB library (projects & items) |
+| `jspdf.umd.min.js` | Vendored jsPDF library used to build the source-sheet PDF locally |
 | `make-icons.html` | Helper to generate icon PNGs from a logo |
 | `icons/` | Extension icons (16/48/128px) |
 | `PRIVACY.md` | Privacy policy |

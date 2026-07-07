@@ -3,9 +3,10 @@
 // Reusable, UI-agnostic logic shared by the side panel:
 //   - Pinterest board scanning (injected into the page)
 //   - Local color-palette extraction (Canvas API)
-//   - Library Pack export (images/ + manifest.csv/json + source sheet)
+//   - Library Pack export (images/ + manifest.csv + PDF source sheet,
+//     the latter via the vendored jsPDF library — see jspdf.umd.min.js)
 //   - Minimal STORE-method ZIP builder
-// Everything runs locally in the browser. No servers, no libraries, no cost.
+// Everything runs locally in the browser. No servers, no accounts, no cost.
 // =====================================================================
 
 // ---------------------------------------------------------------------
@@ -300,150 +301,211 @@ function buildCsv(records) {
   return rows.join('\r\n');
 }
 
-function buildJson(records, boardPalette, exportedAt, board) {
-  return JSON.stringify({
-    project: board.name,
-    source: board.url || '',
-    exportedAt,
-    palette: boardPalette,
-    imageCount: records.length,
-    images: records.map(r => ({
-      index: r.index,
-      filename: r.filename,
-      title: r.title,
-      type: r.kind === 'product' ? 'Product' : 'Inspiration',
-      room: r.room,
-      category: r.category,
-      style: r.style,
-      status: r.status,
-      pinUrl: r.pinUrl,
-      imageUrl: r.imageUrl,
-      colors: r.colors
-    }))
-  }, null, 2);
-}
-
 // ---------------------------------------------------------------------
-// Branded Source & Credits sheet (self-contained HTML, print-to-PDF)
+// Branded Source & Credits sheet as a real PDF (jsPDF, vendored locally —
+// runs entirely in the browser, no server, no ongoing cost).
 // ---------------------------------------------------------------------
-function swatchRow(colors) {
-  if (!colors || !colors.length) return '';
-  return '<div class="swatches">' + colors.map(c =>
-    `<span class="sw" style="background:${esc(c.hex)}" title="${esc(c.hex)}"></span><span class="hex">${esc(c.hex)}</span>`
-  ).join('') + '</div>';
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
 }
 
-function tagLine(r) {
-  const bits = [r.room, r.category, r.style, r.status].filter(Boolean);
-  if (!bits.length) return '';
-  return `<div class="tags">${bits.map(b => `<span class="tag">${esc(b)}</span>`).join('')}</div>`;
+// Normalizes any user-uploaded logo format (PNG/JPEG/WEBP/SVG) to a PNG
+// data URL jsPDF can embed reliably, rasterized large enough to stay
+// crisp when placed in the PDF. Returns the source's aspect ratio too,
+// so the caller can fit it into a max box without stretching it.
+function logoToPngDataUrl(dataUrl, maxPixels) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxPixels / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve({ dataUrl: canvas.toDataURL('image/png'), aspect: img.naturalWidth / img.naturalHeight });
+    };
+    img.onerror = () => reject(new Error('Could not read logo image'));
+    img.src = dataUrl;
+  });
 }
 
-function buildCreditsHtml(records, boardPalette, exportedAt, board) {
+// Truncates text to fit one line (with an ellipsis), using the PDF's own
+// font metrics so it never overflows into the next column.
+function fitLine(doc, text, maxWidth) {
+  const s = text || '';
+  if (!s || doc.getTextWidth(s) <= maxWidth) return s;
+  let t = s;
+  while (t.length > 1 && doc.getTextWidth(t + '…') > maxWidth) t = t.slice(0, -1);
+  return t + '…';
+}
+
+async function buildSourceSheetPdf(records, boardPalette, exportedAt, board) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  const CHARCOAL = hexToRgb('#2B2926');
+  const MUTED = hexToRgb('#908A80');
+  const GOLD = hexToRgb('#B08D4F');
+  const LINE = hexToRgb('#ECE7DF');
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const contentW = pageW - margin * 2;
+  let y = margin;
+
+  // --- Brand block ---
+  if (board.logo) {
+    try {
+      const logo = await logoToPngDataUrl(board.logo, 600);
+      const maxW = 60, maxH = 18;
+      let w = maxW, h = maxW / logo.aspect;
+      if (h > maxH) { h = maxH; w = maxH * logo.aspect; }
+      doc.addImage(logo.dataUrl, 'PNG', margin, y, w, h);
+      y += h + 6;
+    } catch (e) {
+      y += 2;
+    }
+  } else {
+    doc.setFont('times', 'italic');
+    doc.setFontSize(20);
+    doc.setTextColor(...CHARCOAL);
+    doc.text('IMPRINT Connect', margin, y + 8);
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.6);
+    doc.line(margin, y + 11, margin + 46, y + 11);
+    y += 18;
+  }
+
+  // --- Eyebrow / title / subheading ---
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text('SOURCE & CREDITS SHEET', margin, y);
+  y += 7;
+
+  doc.setFont('times', 'italic');
+  doc.setFontSize(18);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(fitLine(doc, board.name || 'Untitled Project', contentW), margin, y);
+  y += 6;
+
   const dateStr = new Date(exportedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text(`${records.length} images  ·  Exported ${dateStr}`, margin, y);
+  y += 8;
 
-  const cards = records.map(r => {
-    const thumb = r.thumb
-      ? `<img class="thumb" src="${r.thumb}" alt="">`
-      : `<div class="thumb noimg">No preview</div>`;
-    const link = r.pinUrl
-      ? `<a class="src" href="${esc(r.pinUrl)}" target="_blank" rel="noopener">View source on Pinterest &rarr;</a>`
-      : `<span class="src muted">Source link unavailable</span>`;
-    return `
-      <div class="item">
-        ${thumb}
-        <div class="meta">
-          <div class="t">${esc(r.title || 'Untitled')}</div>
-          <div class="fn">${esc(r.filename)}</div>
-          ${tagLine(r)}
-          ${link}
-          ${swatchRow(r.colors)}
-        </div>
-      </div>`;
-  }).join('');
-
-  const boardSwatches = boardPalette.map(c =>
-    `<div class="bp"><span class="bpsw" style="background:${esc(c.hex)}"></span><span class="bphex">${esc(c.hex)}</span></div>`
-  ).join('');
-
-  const brandBlock = board.logo
-    ? `<div class="brandmark"><img src="${board.logo}" alt=""></div>`
-    : `<div class="brandmark"><div class="lockup"><div class="imprint">IMPRINT<span class="tm">&#8482;</span></div><div class="rule"></div><div class="connect">Connect</div></div></div>`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(board.name)} — Source Sheet | IMPRINT Connect</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#F9F8F6; --card:#FFFDFB; --charcoal:#2B2926; --muted:#908A80;
-    --gold:#B08D4F; --gold-soft:#C9B48A; --line:#ECE7DF;
+  // --- Palette ---
+  if (boardPalette && boardPalette.length) {
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text('PALETTE', margin, y);
+    y += 4;
+    let sx = margin;
+    boardPalette.forEach(c => {
+      const [r, g, b] = hexToRgb(c.hex);
+      doc.setFillColor(r, g, b);
+      doc.roundedRect(sx, y, 10, 10, 1.5, 1.5, 'F');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...MUTED);
+      doc.text(c.hex, sx + 5, y + 13, { align: 'center' });
+      sx += 14;
+    });
+    y += 18;
   }
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--bg);color:var(--charcoal);font-family:'Inter',-apple-system,'Segoe UI',sans-serif;padding:48px 32px;}
-  .wrap{max-width:920px;margin:0 auto;}
-  .eyebrow{font-size:10px;letter-spacing:2.6px;text-transform:uppercase;color:var(--muted);font-weight:500;}
-  h1{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:500;font-size:34px;margin:8px 0 4px;}
-  .sub{color:var(--muted);font-size:13px;}
-  .board-palette{display:flex;flex-wrap:wrap;gap:14px;margin:24px 0 8px;}
-  .bp{display:flex;flex-direction:column;align-items:center;gap:6px;}
-  .bpsw{width:54px;height:54px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);}
-  .bphex{font-size:10px;letter-spacing:1px;color:var(--muted);}
-  hr{border:0;height:1px;background:var(--line);margin:28px 0;}
-  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;}
-  .item{display:flex;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;}
-  .thumb{width:120px;height:120px;min-width:120px;object-fit:cover;border-radius:10px;background:#eee;}
-  .thumb.noimg{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
-  .meta{display:flex;flex-direction:column;gap:6px;min-width:0;}
-  .t{font-weight:600;font-size:13px;line-height:1.35;}
-  .fn{font-size:10px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;}
-  .tags{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0;}
-  .tag{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-soft);border-radius:999px;padding:2px 8px;}
-  .src{font-size:11px;color:var(--gold);text-decoration:none;}
-  .src:hover{text-decoration:underline;}
-  .src.muted{color:var(--muted);}
-  .swatches{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;}
-  .sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,0.08);}
-  .hex{font-size:9px;color:var(--muted);margin-right:6px;letter-spacing:.5px;}
-  .toolbar{position:sticky;top:0;text-align:right;margin-bottom:18px;}
-  .print{background:var(--charcoal);color:#F4F1EC;border:0;border-radius:999px;padding:10px 20px;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;}
-  .foot{margin-top:36px;font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);text-align:center;}
-  .brandmark{margin-bottom:20px;}
-  .brandmark img{max-height:64px;max-width:280px;width:auto;display:block;}
-  .lockup{display:inline-flex;flex-direction:column;align-items:flex-start;}
-  .lockup .imprint{font-family:'Playfair Display',Georgia,serif;font-weight:600;font-size:30px;letter-spacing:6px;color:var(--charcoal);line-height:1;}
-  .lockup .imprint .tm{font-size:11px;vertical-align:super;letter-spacing:0;}
-  .lockup .rule{align-self:stretch;height:2px;background:var(--gold);margin:6px 0;}
-  .lockup .connect{font-family:'Inter',sans-serif;font-size:11px;font-weight:500;letter-spacing:9px;text-transform:uppercase;color:var(--charcoal-soft);align-self:center;}
-  @media print{
-    body{background:#fff;padding:0;}
-    .toolbar{display:none;}
-    .item{break-inside:avoid;}
+
+  doc.setDrawColor(...LINE);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y, pageW - margin, y);
+  y += 6;
+
+  // --- Item rows ---
+  const rowH = 32;
+  const thumbSize = 26;
+
+  function newPage() {
+    doc.addPage();
+    y = margin;
   }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="toolbar"><button class="print" onclick="window.print()">Save as PDF</button></div>
-    ${brandBlock}
-    <div class="eyebrow">Source &amp; Credits Sheet</div>
-    <h1>${esc(board.name)}</h1>
-    <div class="sub">${records.length} images &middot; Exported ${esc(dateStr)}${board.url ? ` &middot; <a href="${esc(board.url)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;">Source</a>` : ''}</div>
 
-    ${boardPalette.length ? `<div class="eyebrow" style="margin-top:26px;">Palette</div><div class="board-palette">${boardSwatches}</div>` : ''}
+  for (const r of records) {
+    if (y + rowH > pageH - margin) newPage();
 
-    <hr>
-    <div class="grid">${cards}</div>
+    if (r.thumb && r.thumbW && r.thumbH) {
+      const scale = Math.min(thumbSize / r.thumbW, thumbSize / r.thumbH);
+      const w = r.thumbW * scale, h = r.thumbH * scale;
+      doc.addImage(r.thumb, 'JPEG', margin + (thumbSize - w) / 2, y + (thumbSize - h) / 2, w, h);
+    } else {
+      doc.setFillColor(...LINE);
+      doc.roundedRect(margin, y, thumbSize, thumbSize, 2, 2, 'F');
+    }
 
-    <div class="foot">Generated locally by IMPRINT Connect &middot; Not affiliated with Pinterest &middot; Verify usage rights before reuse</div>
-  </div>
-</body>
-</html>`;
+    const textX = margin + thumbSize + 5;
+    const textW = pageW - margin - textX;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...CHARCOAL);
+    doc.text(fitLine(doc, r.title || 'Untitled', textW), textX, y + 5);
+
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(fitLine(doc, r.filename, textW), textX, y + 10);
+
+    const tags = [r.room, r.category, r.style, r.status].filter(Boolean).join('   ·   ');
+    if (tags) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...GOLD);
+      doc.text(fitLine(doc, tags, textW), textX, y + 15);
+    }
+
+    doc.setFontSize(8.5);
+    if (r.pinUrl) {
+      doc.setTextColor(...GOLD);
+      doc.textWithLink('View source on Pinterest →', textX, y + 20, { url: r.pinUrl });
+    } else {
+      doc.setTextColor(...MUTED);
+      doc.text('Source link unavailable', textX, y + 20);
+    }
+
+    if (r.colors && r.colors.length) {
+      let sx = textX;
+      r.colors.slice(0, 6).forEach(c => {
+        const [cr, cg, cb] = hexToRgb(c.hex);
+        doc.setFillColor(cr, cg, cb);
+        doc.rect(sx, y + 23, 3.5, 3.5, 'F');
+        sx += 5;
+      });
+    }
+
+    doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y + rowH - 2, pageW - margin, y + rowH - 2);
+
+    y += rowH;
+  }
+
+  // --- Footer + page numbers on every page ---
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(
+      `Generated locally by IMPRINT Connect  ·  Not affiliated with Pinterest  ·  Verify usage rights before reuse  ·  Page ${p} of ${totalPages}`,
+      pageW / 2, pageH - 8, { align: 'center' }
+    );
+  }
+
+  return new Uint8Array(doc.output('arraybuffer'));
 }
 
 // ---------------------------------------------------------------------
@@ -486,12 +548,15 @@ async function buildLibraryPack(items, board, options) {
 
     let colors = [];
     let thumb = '';
+    let thumbW = 0, thumbH = 0;
     try {
       const ic = await decodeToCanvas(data, 200);
       if (ic) {
         const imgData = ic.ctx.getImageData(0, 0, ic.canvas.width, ic.canvas.height);
         colors = quantize(imgData, 5);
         thumb = ic.canvas.toDataURL('image/jpeg', 0.7);
+        thumbW = ic.canvas.width;
+        thumbH = ic.canvas.height;
       }
     } catch (e) { /* best-effort */ }
 
@@ -507,7 +572,9 @@ async function buildLibraryPack(items, board, options) {
       pinUrl: it.pinUrl || '',
       imageUrl: it.imageUrl || '',
       colors,
-      thumb
+      thumb,
+      thumbW,
+      thumbH
     });
   }
 
@@ -516,8 +583,8 @@ async function buildLibraryPack(items, board, options) {
   const palette = mergePalette(records.map(r => r.colors), 8);
   const exportedAt = new Date().toISOString();
   files.push({ name: 'manifest.csv', data: textBytes(buildCsv(records)) });
-  files.push({ name: 'manifest.json', data: textBytes(buildJson(records, palette, exportedAt, board)) });
-  files.push({ name: 'source-sheet.html', data: textBytes(buildCreditsHtml(records, palette, exportedAt, board)) });
+  const pdfBytes = await buildSourceSheetPdf(records, palette, exportedAt, board);
+  files.push({ name: 'source-sheet.pdf', data: pdfBytes });
 
   return { blob: buildZip(files), count: records.length, palette };
 }
