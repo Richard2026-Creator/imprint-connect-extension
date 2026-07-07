@@ -16,6 +16,25 @@ const ROOMS = [
 ];
 const ADD_NEW = '__add__';   // sentinel value for the "Add new…" option
 
+// Inline placeholder shown in place of a thumbnail whose Pinterest source
+// URL has expired or 404s, instead of the browser's broken-image icon.
+const BROKEN_THUMB_SVG = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+  '<rect width="64" height="64" fill="#EDEAE4"/>' +
+  '<path d="M20 42 L28 32 L34 38 L44 24 L48 42 Z" fill="#B5AEA3"/>' +
+  '<circle cx="24" cy="24" r="4" fill="#B5AEA3"/>' +
+  '</svg>'
+);
+// Extension pages enforce a strict default CSP that blocks inline onerror=""
+// attributes, so the fallback is wired up via addEventListener instead.
+function attachThumbFallback(imgEl) {
+  if (!imgEl) return;
+  imgEl.addEventListener('error', function onThumbError() {
+    imgEl.removeEventListener('error', onThumbError);
+    imgEl.src = BROKEN_THUMB_SVG;
+  });
+}
+
 // The IMPRINT wordmark, recreated as crisp markup (used when no custom logo).
 const LOCKUP_HTML = '<div class="logo-lockup"><div class="imprint">IMPRINT<span class="tm">&#8482;</span></div><div class="rule"></div><div class="connect">Connect</div></div>';
 
@@ -327,6 +346,7 @@ function renderScanGrid() {
     const div = document.createElement('div');
     div.className = 'scan-pin' + (scanSelected.has(i) ? ' selected' : '');
     div.innerHTML = `<div class="chk"></div><img src="${esc(pin.thumbnailUrl)}" referrerpolicy="no-referrer" loading="lazy" alt="">`;
+    attachThumbFallback(div.querySelector('img'));
     div.addEventListener('click', () => {
       if (scanSelected.has(i)) scanSelected.delete(i); else scanSelected.add(i);
       div.classList.toggle('selected');
@@ -362,7 +382,6 @@ async function loadItems() {
   populateFilters();
   renderProjectMeta();
   renderItems();
-  ui.exportBtn.disabled = items.length === 0;
 }
 
 function roomList() {
@@ -465,16 +484,25 @@ function filteredItems() {
 // to both types, so it's always shown regardless of Inspiration/Product:
 //   Inspiration -> Room + Style + Status ;  Product (FF&E) -> Category + Status + Room
 function tagSelectsHtml(it) {
+  const statusSelect = `<select class="status-select" data-field="status" data-status="${esc(it.status || '')}">${fieldOptions('status', it.status)}</select>`;
   if (it.kind === 'product') {
     return `
       <select data-field="category">${fieldOptions('category', it.category)}</select>
-      <select data-field="status">${fieldOptions('status', it.status)}</select>
+      ${statusSelect}
       <select data-field="room">${fieldOptions('room', it.room)}</select>`;
   }
   return `
     <select data-field="room">${fieldOptions('room', it.room)}</select>
     <select data-field="style">${fieldOptions('style', it.style)}</select>
-    <select data-field="status">${fieldOptions('status', it.status)}</select>`;
+    ${statusSelect}`;
+}
+
+// Small colored dot for a status value, used where there's no room for the
+// full select (e.g. the compact Bulk-mode card) so approval state still
+// reads at a glance.
+function statusDotHtml(status) {
+  if (!status) return '';
+  return `<span class="status-dot status-dot-${esc(status.toLowerCase())}" title="${esc(status)}"></span>`;
 }
 
 function renderBatchBar() {
@@ -487,6 +515,17 @@ function renderBatchBar() {
   ui.batchControls.style.display = n ? 'flex' : 'none';
 }
 
+// Keeps the Export button's label and enabled state matched to what a
+// click would actually export, so an active filter can't silently ship a
+// partial ZIP without the user noticing.
+function updateExportButton(list) {
+  const total = items.length;
+  ui.exportBtn.disabled = list.length === 0;
+  ui.exportBtn.textContent = (total > 0 && list.length !== total)
+    ? `Export (${list.length} of ${total})`
+    : 'Export';
+}
+
 function renderItems() {
   const hasItems = items.length > 0;
   ui.filters.style.display = hasItems ? 'flex' : 'none';
@@ -497,6 +536,7 @@ function renderItems() {
     ui.bulkToggle.textContent = 'Bulk tag';
     selectedIds.clear();
     renderBatchBar();
+    updateExportButton([]);
     ui.items.innerHTML = `
       <div class="empty">
         <div class="editorial">Your library is empty.</div>
@@ -508,6 +548,7 @@ function renderItems() {
   const list = filteredItems();
   ui.itemCount.textContent = `${list.length} of ${items.length} shown`;
   renderBatchBar();
+  updateExportButton(list);
 
   if (list.length === 0) {
     ui.items.innerHTML = `<div class="empty">No images match these filters.</div>`;
@@ -539,8 +580,9 @@ function bulkCard(it) {
     </div>
     <div class="body">
       <div class="bulk-name">${esc(displayName(it))}</div>
-      <div class="bulk-tags">${esc(tagsText(it))}</div>
+      <div class="bulk-tags">${statusDotHtml(it.status)}${esc(tagsText(it))}</div>
     </div>`;
+  attachThumbFallback(card.querySelector('.thumb'));
   card.addEventListener('click', () => {
     if (selectedIds.has(it.id)) selectedIds.delete(it.id); else selectedIds.add(it.id);
     card.classList.toggle('sel');
@@ -573,6 +615,7 @@ function fullCard(it) {
         <button class="del" title="Remove">&times;</button>
       </div>
     </div>`;
+  attachThumbFallback(card.querySelector('.thumb'));
 
   const cap = card.querySelector('.caption');
   cap.addEventListener('change', async () => {
@@ -606,6 +649,7 @@ function fullCard(it) {
         return;
       }
       it[field] = sel.value;
+      if (field === 'status') sel.dataset.status = sel.value;
       await updateItem(it);
     });
   });
@@ -618,7 +662,6 @@ function fullCard(it) {
     selectedIds.delete(it.id);
     renderProjectMeta();
     renderItems();
-    ui.exportBtn.disabled = items.length === 0;
   });
 
   return card;
@@ -650,7 +693,6 @@ async function deleteSelected() {
   selectedIds.clear();
   renderProjectMeta();
   renderItems();
-  ui.exportBtn.disabled = items.length === 0;
 }
 
 function setBulkMode(on) {
